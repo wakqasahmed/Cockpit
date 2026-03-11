@@ -1759,7 +1759,7 @@ export default {
 
                     <section class="app-restapi-section" v-if="parameterGroups.length">
                         <div class="app-restapi-section-head">
-                            <div class="app-restapi-section-title">{{ t('Parameters') }}</div>
+                            <div class="kiss-text-caption">{{ t('Parameters') }}</div>
                         </div>
 
                         <div class="app-restapi-form-grid" v-for="group in parameterGroups" :key="group.location">
@@ -1862,6 +1862,51 @@ export default {
                         <div v-for="warning in requestWarnings" :key="warning">{{ warning }}</div>
                     </div>
 
+                    <section class="app-restapi-section app-restapi-response-panel" v-if="response">
+                        <div class="app-restapi-section-head">
+                            <div class="app-restapi-section-title">{{ t('Response') }}</div>
+                            <div class="kiss-flex kiss-flex-middle">
+                                <span class="kiss-badge kiss-badge-outline" :class="statusTheme(response.status)">{{ response.status || 'ERR' }}</span>
+                                <span class="kiss-size-xsmall kiss-color-muted kiss-margin-small-start">{{ response.elapsed }}ms</span>
+                                <span class="kiss-size-xsmall kiss-color-muted kiss-margin-small-start" v-if="response.size">{{ App.utils.formatSize(response.size) }}</span>
+                                <button type="button" class="kiss-button kiss-button-small kiss-margin-small-start" @click="copyResponse">{{ t('Copy') }}</button>
+                            </div>
+                        </div>
+
+                        <div class="app-restapi-tabbar">
+                            <button type="button" class="app-restapi-tab" :class="{ active: responseTab === 'body' }" @click="responseTab = 'body'">{{ t('Body') }}</button>
+                            <button type="button" class="app-restapi-tab" :class="{ active: responseTab === 'headers' }" @click="responseTab = 'headers'">{{ t('Headers') }}</button>
+                        </div>
+
+                        <div v-if="responseTab === 'body'">
+                            <div class="kiss-size-small kiss-color-muted kiss-margin-small-bottom" v-if="response.statusText">{{ response.statusText }}</div>
+
+                            <div class="app-restapi-json-view" v-if="response.bodyType === 'json'">
+                                <json-node :data="response.data" :is-last="true"></json-node>
+                            </div>
+
+                            <div class="app-restapi-empty" v-else-if="response.bodyType === 'binary'">
+                                <div class="kiss-text-bold">{{ t('Binary response') }}</div>
+                                <div class="kiss-size-small kiss-color-muted kiss-margin-small-top">{{ response.data.type }}</div>
+                            </div>
+
+                            <field-code
+                                v-else
+                                :model-value="response.text"
+                                :height="220"
+                                :mode="response.contentType.includes('xml') ? 'xml' : null"
+                                :codemirror="{ readOnly: true, lineWrapping: true }">
+                            </field-code>
+                        </div>
+
+                        <div v-else class="app-restapi-header-table">
+                            <div class="app-restapi-header-row" v-for="entry in responseHeaderEntries" :key="entry.name">
+                                <div class="app-restapi-header-name kiss-text-monospace">{{ entry.name }}</div>
+                                <div class="app-restapi-header-value kiss-text-monospace">{{ entry.value }}</div>
+                            </div>
+                        </div>
+                    </section>
+
                     <section class="app-restapi-section">
                         <div class="app-restapi-section-head">
                             <div class="app-restapi-section-title">cURL</div>
@@ -1938,58 +1983,6 @@ export default {
                                 {{ t('This auth scheme is not yet interactive in the custom playground.') }}
                             </div>
                         </article>
-                    </section>
-
-                    <section class="app-restapi-section app-restapi-response-panel">
-                        <div class="app-restapi-section-head">
-                            <div class="app-restapi-section-title">{{ t('Response') }}</div>
-                            <div class="kiss-flex kiss-flex-middle" v-if="response">
-                                <span class="kiss-badge kiss-badge-outline" :class="statusTheme(response.status)">{{ response.status || 'ERR' }}</span>
-                                <span class="kiss-size-xsmall kiss-color-muted kiss-margin-small-start">{{ response.elapsed }}ms</span>
-                                <span class="kiss-size-xsmall kiss-color-muted kiss-margin-small-start" v-if="response.size">{{ App.utils.formatSize(response.size) }}</span>
-                                <button type="button" class="kiss-button kiss-button-small kiss-margin-small-start" @click="copyResponse">{{ t('Copy') }}</button>
-                            </div>
-                        </div>
-
-                        <div class="app-restapi-empty" v-if="!response">
-                            <div class="kiss-text-bold">{{ t('No response yet') }}</div>
-                            <div class="kiss-size-small kiss-color-muted kiss-margin-small-top">{{ t('Run the request to inspect headers and payload.') }}</div>
-                        </div>
-
-                        <template v-else>
-                            <div class="app-restapi-tabbar">
-                                <button type="button" class="app-restapi-tab" :class="{ active: responseTab === 'body' }" @click="responseTab = 'body'">{{ t('Body') }}</button>
-                                <button type="button" class="app-restapi-tab" :class="{ active: responseTab === 'headers' }" @click="responseTab = 'headers'">{{ t('Headers') }}</button>
-                            </div>
-
-                            <div v-if="responseTab === 'body'">
-                                <div class="kiss-size-small kiss-color-muted kiss-margin-small-bottom" v-if="response.statusText">{{ response.statusText }}</div>
-
-                                <div class="app-restapi-json-view" v-if="response.bodyType === 'json'">
-                                    <json-node :data="response.data" :is-last="true"></json-node>
-                                </div>
-
-                                <div class="app-restapi-empty" v-else-if="response.bodyType === 'binary'">
-                                    <div class="kiss-text-bold">{{ t('Binary response') }}</div>
-                                    <div class="kiss-size-small kiss-color-muted kiss-margin-small-top">{{ response.data.type }}</div>
-                                </div>
-
-                                <field-code
-                                    v-else
-                                    :model-value="response.text"
-                                    :height="220"
-                                    :mode="response.contentType.includes('xml') ? 'xml' : null"
-                                    :codemirror="{ readOnly: true, lineWrapping: true }">
-                                </field-code>
-                            </div>
-
-                            <div v-else class="app-restapi-header-table">
-                                <div class="app-restapi-header-row" v-for="entry in responseHeaderEntries" :key="entry.name">
-                                    <div class="app-restapi-header-name kiss-text-monospace">{{ entry.name }}</div>
-                                    <div class="app-restapi-header-value kiss-text-monospace">{{ entry.value }}</div>
-                                </div>
-                            </div>
-                        </template>
                     </section>
                 </div>
             </aside>
