@@ -152,7 +152,7 @@
 
                     showApiViewer(apiKey = null) {
                         VueView.ui.offcanvas('system:assets/dialogs/api-viewer.js', {
-                            openApiUrl: this.$routeUrl('/system/api/openapi'),
+                            openApiUrl: this.$routeUrl('/system/api/openapi?format=json'),
                             apiKey
                         });
                     },

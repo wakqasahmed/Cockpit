@@ -145,6 +145,7 @@ class Api extends App {
     public function openapi() {
 
         $this->helper('session')->close();
+        $format = \strtolower($this->param('format', 'yaml'));
 
         $paths = [(new \Symfony\Component\Finder\Finder())->files()->in(APP_DIR.'/modules')->notPath('#vendor#')];
 
@@ -160,10 +161,11 @@ class Api extends App {
             $paths[] = (new \Symfony\Component\Finder\Finder())->files()->in($this->app->path('#root:config/api'))->notPath('#vendor#');
         }
 
-        $yaml = \OpenApi\Generator::scan($paths, ['analyser' => new \SwaggerPhp\AlternativeTokenAnalyser()])->toYaml();
+        $openapi = \OpenApi\Generator::scan($paths, ['analyser' => new \SwaggerPhp\AlternativeTokenAnalyser()]);
+        $output = $format === 'json' ? $openapi->toJson() : $openapi->toYaml();
 
         // replace placeholders
-        $yaml = \str_replace([
+        $output = \str_replace([
             '{{ app.api.url }}',
             '{{ app.name }}',
             '{{ app.version }}',
@@ -171,11 +173,11 @@ class Api extends App {
             $this->app->module('system')->spaceUrl('/api'),
             $this->app->retrieve('app.name'),
             $this->app->retrieve('app.version'),
-        ], $yaml);
+        ], $output);
 
-        $this->app->response->mime = 'text';
+        $this->app->response->mime = $format === 'json' ? 'json' : 'text';
 
-        return $yaml;
+        return $output;
     }
 
     public function restApiViewer() {
@@ -183,15 +185,12 @@ class Api extends App {
         $this->helper('session')->close();
 
         $apiKey = $this->param('apiKey');
-        $bgColor = $this->param('bgColor');
-        $primaryColor = $this->param('primaryColor');
-        $textColor = $this->param('textColor');
 
-        $this->layout = 'app:layouts/raw.php';
+        $this->layout = 'app:layouts/canvas.php';
 
-        $openApiUrl = $this->param('specUrl', $this->app->routeUrl('/system/api/openapi'));
+        $openApiUrl = $this->param('specUrl', $this->app->routeUrl('/system/api/openapi?format=json'));
 
-        return $this->render('system:views/api/rest-api-viewer.php', \compact('openApiUrl', 'apiKey', 'bgColor', 'primaryColor', 'textColor'));
+        return $this->render('system:views/api/rest-api-viewer.php', \compact('openApiUrl', 'apiKey'));
     }
 
     public function graphqlViewer() {
