@@ -34,11 +34,6 @@
     padding: 25px;
 }
 
-.app-restapi-console {
-    border-left: 1px solid var(--kiss-hr-color);
-    background: var(--kiss-color-contrast);
-}
-
 .app-restapi-console-scroll,
 .app-restapi-sidebar-body {
     overflow-y: auto;
@@ -168,7 +163,7 @@
 }
 
 .app-restapi-path {
-    font-size: 1rem;
+    font-size: 1.5rem;
     font-weight: 700;
     overflow-wrap: anywhere;
 }
@@ -300,7 +295,6 @@
 
 .app-restapi-actions {
     display: flex;
-    gap: 8px;
     margin-top: 1.5rem;
 }
 

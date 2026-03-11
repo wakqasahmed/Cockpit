@@ -1,6 +1,6 @@
 export default {
 
-    _meta: { flip: true, size: 'screen' },
+    _meta: { flip: true, size: 'xxlarge' },
 
     props: {
         openApiUrl: {
@@ -36,10 +36,13 @@ export default {
                     <div class="kiss-text-bold">{{ t('REST API Playground') }}</div>
                     <div class="kiss-size-xsmall kiss-color-muted">{{ t('OpenAPI powered explorer with live requests') }}</div>
                 </div>
-                <a class="kiss-button kiss-button-small kiss-margin-small-end kiss-visible@m" :href="standaloneUrl" target="_blank" rel="noopener">
-                    {{ t('Open page') }}
-                </a>
-                <button type="button" class="kiss-button kiss-button-small" kiss-offcanvas-close>{{ t('Close') }}</button>
+
+                <div class="kiss-button-group">
+                    <a class="kiss-button kiss-button-small kiss-visible@m" :href="standaloneUrl" target="_blank" rel="noopener">
+                        {{ t('Open page') }}
+                    </a>
+                    <button type="button" class="kiss-button kiss-button-small" kiss-offcanvas-close>{{ t('Close') }}</button>
+                </div>
             </div>
             <div class="app-offcanvas-content kiss-bgcolor-contrast kiss-flex-1">
                 <rest-api-playground :open-api-url="openApiUrl" :api-key="apiKey"></rest-api-playground>

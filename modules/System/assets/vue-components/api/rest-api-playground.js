@@ -482,7 +482,7 @@ const buildOperations = spec => {
                 path,
                 tags,
                 operationId: operation.operationId || '',
-                summary: operation.summary || `${method.toUpperCase()} ${path}`,
+                summary: operation.summary || `${path}`,
                 description: operation.description || '',
                 deprecated: !!operation.deprecated,
                 parameters,
@@ -1697,7 +1697,7 @@ export default {
                     <div v-else>
                         <section class="app-restapi-tag-group" v-for="group in filteredTagGroups" :key="group.tag">
                             <button type="button" class="app-restapi-tag-toggle" @click="toggleTag(group.tag)">
-                                <span class="kiss-flex-1">{{ group.tag }}</span>
+                                <span class="kiss-align-start kiss-text-capitalize kiss-flex-1">{{ group.tag }}</span>
                                 <span class="kiss-size-xsmall kiss-color-muted">{{ group.operations.length }}</span>
                                 <icon class="kiss-margin-small-start kiss-color-muted">{{ expandedTags[group.tag] ? 'expand_less' : 'expand_more' }}</icon>
                             </button>
@@ -1748,8 +1748,6 @@ export default {
                             <button type="button" class="kiss-button kiss-button-small" @click="App.utils.copyText(requestUrlPreview, () => App.ui.notify('Request URL copied!'))">{{ t('Copy URL') }}</button>
                         </div>
                     </div>
-
-                    <div class="app-restapi-summary">{{ selectedOperation.summary }}</div>
 
                     <div class="app-restapi-description" v-if="selectedOperation.description" v-html="renderRichText(selectedOperation.description)"></div>
 
@@ -1853,11 +1851,11 @@ export default {
                         </div>
                     </section>
 
-                    <div class="app-restapi-actions">
-                        <button type="button" class="kiss-button kiss-button-primary" @click="sendRequest" :disabled="submitting">
+                    <div class="kiss-button-group app-restapi-actions">
+                        <button type="button" class="kiss-button kiss-button-small kiss-button-primary" @click="sendRequest" :disabled="submitting">
                             {{ submitting ? t('Sending...') : t('Send request') }}
                         </button>
-                        <button type="button" class="kiss-button" @click="resetComposer">{{ t('Reset') }}</button>
+                        <button type="button" class="kiss-button kiss-button-small" @click="resetComposer">{{ t('Reset') }}</button>
                     </div>
 
                     <div class="kiss-size-small kiss-color-warning kiss-margin-small-top" v-if="requestWarnings.length">
