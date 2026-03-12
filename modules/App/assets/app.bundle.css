@@ -2242,7 +2242,7 @@ kiss-accordion-trigger[active="true"] + kiss-content {
     justify-content: center;
     align-items: center;
     min-width: 20px;
-    background: var(--kiss-badge-bgcolor, var(--kiss-color-primrary, hsl(210, 100%, 50%)));
+    background: var(--kiss-badge-bgcolor, var(--kiss-color-primary, hsl(210, 100%, 50%)));
     border: .1em rgba(0,0,0,0) solid;
     color: var(--kiss-badge-color, #fff) !important;
     font-weight: bold;

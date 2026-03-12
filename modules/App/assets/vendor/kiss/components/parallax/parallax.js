@@ -9,6 +9,7 @@ customElements.define('kiss-parallax', class extends HTMLElement {
         this.mobileDisable = this.getAttribute('mobile') == 'false';
         this.conditions = []
         this.active = true
+        this._ticking = false;
 
         this.transform = this.getAttribute('transform') || 'translateY';
 
@@ -20,15 +21,20 @@ customElements.define('kiss-parallax', class extends HTMLElement {
           ? this.targetR.top - this.winHeight
           : 0
 
-        window.addEventListener('scroll', event => {
+        window.addEventListener('scroll', () => {
+            if ($this._ticking) return;
+            $this._ticking = true;
             requestAnimationFrame(() => {
-                if ($this.mobileDisable && window.innerWidth < this.mobilePx) return
-
-                if ($this.active) {
-                  $this.update()
+                if ($this.mobileDisable && window.innerWidth < $this.mobilePx) {
+                    $this._ticking = false;
+                    return;
                 }
+                if ($this.active) {
+                    $this.update()
+                }
+                $this._ticking = false;
             })
-        })
+        }, { passive: true })
     }
 
     // HELPERS
@@ -98,6 +104,6 @@ customElements.define('kiss-parallax', class extends HTMLElement {
     }
 
     _isHidden() {
-        return (this.offsetTop === null)
+        return (this.offsetParent === null)
     }
 });

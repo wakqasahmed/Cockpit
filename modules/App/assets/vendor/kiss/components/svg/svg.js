@@ -43,7 +43,7 @@ customElements.define('kiss-svg', class extends HTMLElement {
                 return;
             }
 
-            this.innerHTML = content.substr(svgStart);
+            this.innerHTML = content.substring(svgStart);
 
             let svg = this.children[0];
 

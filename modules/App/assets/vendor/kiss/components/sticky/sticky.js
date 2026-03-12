@@ -1,5 +1,6 @@
 
 let register = [];
+let ticking = false;
 
 const update = () => {
 
@@ -24,11 +25,20 @@ const update = () => {
     });
 };
 
-document.addEventListener('scroll', update, { passive: true });
-window.addEventListener('resize', update);
+const scheduleUpdate = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+        update();
+        ticking = false;
+    });
+};
+
+document.addEventListener('scroll', scheduleUpdate, { passive: true });
+window.addEventListener('resize', scheduleUpdate, { passive: true });
 
 // Observer to detect size changes/visibility of registered components
-const observer = new ResizeObserver(update);
+const observer = new ResizeObserver(scheduleUpdate);
 
 customElements.define('kiss-sticky', class extends HTMLElement {
 
