@@ -41,7 +41,7 @@ export default {
                 this.loading = false;
 
             }).catch(rsp => {
-                this.saving = false;
+                this.loading = false;
                 App.ui.notify(rsp.error || 'Loading revisions failed!', 'error');
             });
 

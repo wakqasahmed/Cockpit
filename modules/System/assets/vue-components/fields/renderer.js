@@ -361,7 +361,7 @@ export default {
 
     mounted() {
 
-        App.on('fields-renderer-validate', evt => {
+        this._validateHandler = evt => {
 
             if (!evt.params.root.contains(this.$el)) {
                 return;
@@ -394,7 +394,9 @@ export default {
             if (errors.length) {
                 evt.params.errors = errors;
             }
-        });
+        };
+
+        App.on('fields-renderer-validate', this._validateHandler);
 
         // watch outline links on scroll
         if (this.outline) {
@@ -405,6 +407,15 @@ export default {
                 window.addEventListener('scroll', this.updateOutline);
                 this.updateOutline();
             }, 500);
+        }
+    },
+
+    beforeUnmount() {
+        if (this._validateHandler) {
+            App.off('fields-renderer-validate', this._validateHandler);
+        }
+        if (this.outline) {
+            window.removeEventListener('scroll', this.updateOutline);
         }
     },
 

@@ -49,8 +49,8 @@ export default {
 
         if (!this.modal) {
 
-            document.body.addEventListener('dragover', e => e.preventDefault());
-            document.body.addEventListener('drop', e => {
+            this._onDragOver = e => e.preventDefault();
+            this._onDrop = e => {
 
                 if (!e.dataTransfer.files) {
                     return;
@@ -59,7 +59,17 @@ export default {
                 e.preventDefault();
                 e.stopPropagation();
                 this.uploadFiles(e.dataTransfer.files);
-            });
+            };
+
+            document.body.addEventListener('dragover', this._onDragOver);
+            document.body.addEventListener('drop', this._onDrop);
+        }
+    },
+
+    beforeUnmount() {
+        if (this._onDragOver) {
+            document.body.removeEventListener('dragover', this._onDragOver);
+            document.body.removeEventListener('drop', this._onDrop);
         }
     },
 
@@ -175,11 +185,11 @@ export default {
         },
 
         download(file) {
-            window.open(this.$routeUrl(`/finder/api?cmd=download&path=${file.path}&root=${encodeURIComponent(this.root)}&xcsrftoken=${App.csrf || ''}`));
+            window.open(this.$routeUrl(`/finder/api?cmd=download&path=${encodeURIComponent(file.path)}&root=${encodeURIComponent(this.root)}&xcsrftoken=${App.csrf || ''}`));
         },
 
         downloadfolder(folder) {
-            window.open(this.$routeUrl(`/finder/api?cmd=downloadfolder&path=${folder.path}&root=${encodeURIComponent(this.root)}&xcsrftoken=${App.csrf || ''}`));
+            window.open(this.$routeUrl(`/finder/api?cmd=downloadfolder&path=${encodeURIComponent(folder.path)}&root=${encodeURIComponent(this.root)}&xcsrftoken=${App.csrf || ''}`));
         },
 
         createFolder() {
@@ -228,7 +238,8 @@ export default {
 
                     this.$request('/finder/api', {root: this.root, cmd: 'rename', path: item.path, name}).then(() => {
 
-                        item.path = item.path.replace(item.name, name);
+                        let lastIdx = item.path.lastIndexOf(item.name);
+                        item.path = item.path.substring(0, lastIdx) + name + item.path.substring(lastIdx + item.name.length);
                         item.name = name;
 
                     }).catch(rsp => {

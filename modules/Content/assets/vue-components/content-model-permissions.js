@@ -56,7 +56,7 @@ export default {
                 </div>
             </div>
 
-            <div classs="kiss-margin">
+            <div class="kiss-margin">
                 <input class="kiss-input kiss-input-small" type="text" v-model="filter" :placeholder="t('Filter models...')">
             </div>
 

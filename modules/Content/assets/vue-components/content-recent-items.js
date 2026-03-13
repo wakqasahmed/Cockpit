@@ -48,9 +48,6 @@ export default {
         stateText() {
             return this.state === null ? this.t('All') : this.state === 1 ? this.t('Published') : this.t('Unpublished');
         },
-        limit() {
-            this.load();
-        }
     },
 
     watch: {

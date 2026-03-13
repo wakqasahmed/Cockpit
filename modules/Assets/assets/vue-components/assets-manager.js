@@ -331,7 +331,7 @@ export default {
         updateSortBy(e) {
 
             let sort = {};
-            sort[e.srcElement.value] = this.sortDir;
+            sort[e.target.value] = this.sortDir;
             this.sort = sort;
         }
     },

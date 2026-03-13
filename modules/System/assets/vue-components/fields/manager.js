@@ -73,7 +73,7 @@ let FieldsManager = {
             return [...new Set(groups)].sort();
         },
 
-        filteredFieledTypes() {
+        filteredFieldTypes() {
 
             let meta = null, types = {};
 
@@ -170,9 +170,9 @@ let FieldsManager = {
                         return;
                     }
 
-                    if (Object.keys(this.filteredFieledTypes).length === 1) {
+                    if (Object.keys(this.filteredFieldTypes).length === 1) {
                         event.preventDefault();
-                        this.setFieldType(Object.keys(this.filteredFieledTypes)[0]);
+                        this.setFieldType(Object.keys(this.filteredFieldTypes)[0]);
                         this.$refs.fieldTypeSelectorPopout.close();
                         return;
                     }
@@ -183,7 +183,7 @@ let FieldsManager = {
                 case 38:
                 case 40:
 
-                    const ftypes = Object.keys(this.filteredFieledTypes);
+                    const ftypes = Object.keys(this.filteredFieldTypes);
 
                     if (!ftypes.length) {
                         return;
@@ -395,7 +395,7 @@ let FieldsManager = {
                         </div>
                         <kiss-navlist style="height:50vh;overflow:scroll;" v-if="field">
 
-                            <kiss-card :id="uid+'-field-type-picker-'+fieldTypeName" class="kiss-padding-small kiss-margin-xsmall" theme="bordered" hover="contrast shadow" :style="{borderColor: (fieldType.selected || fieldType.selected == 0) && fieldType.type == fieldTypeName ? 'var(--kiss-color-primary)':''}" v-for="(f,fieldTypeName) in filteredFieledTypes">
+                            <kiss-card :id="uid+'-field-type-picker-'+fieldTypeName" class="kiss-padding-small kiss-margin-xsmall" theme="bordered" hover="contrast shadow" :style="{borderColor: (fieldType.selected || fieldType.selected == 0) && fieldType.type == fieldTypeName ? 'var(--kiss-color-primary)':''}" v-for="(f,fieldTypeName) in filteredFieldTypes">
                                 <kiss-row class="kiss-position-relative kiss-flex-middle" gap="small" kiss-popout-close="true">
                                     <div>
                                         <div class="kiss-padding-small app-border-radius" :style="{background: f.color || 'rgb(255, 248, 214)'}">

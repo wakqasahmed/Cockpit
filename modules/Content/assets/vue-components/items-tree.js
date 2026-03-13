@@ -86,7 +86,7 @@ export default {
 
             let params = {_pid:this.p._id};
 
-            if (this.locale && this.loacale !== 'default') {
+            if (this.locale && this.locale !== 'default') {
                 params.locale = this.locale;
             }
 
@@ -252,9 +252,6 @@ export default {
                     <kiss-navlist class="kiss-margin">
                         <ul>
                             <li class="kiss-nav-header">{{ t('Item actions') }}</li>
-                            <li v-if="actionAsset">
-                                <div class="kiss-color-muted kiss-text-truncate kiss-margin-small-bottom">{{ t('Item actions')}}</div>
-                            </li>
                             <li>
                                 <a class="kiss-flex kiss-flex-middle" :href="$routeUrl('/content/tree/item/'+model.name+'/'+actionItem.item._id)">
                                     <icon class="kiss-margin-small-end" size="larger">create</icon>
