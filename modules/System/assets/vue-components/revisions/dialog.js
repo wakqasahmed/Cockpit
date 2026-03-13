@@ -49,7 +49,7 @@ export default {
 
                 if (current.length > 200 || prev.length > 200) {
 
-                    _diffhtml = prev;
+                    _diffhtml = App.utils.escape(prev);
 
                 } else {
 
@@ -64,11 +64,11 @@ export default {
                         }
 
                         if (_diff[i].removed) {
-                            _diffhtml += '<del>'+_diff[i].value+'</del>';
+                            _diffhtml += '<del>'+App.utils.escape(_diff[i].value)+'</del>';
                         } else if (_diff[i].added) {
-                            _diffhtml += '<ins>'+_diff[i].value+'</ins>';
+                            _diffhtml += '<ins>'+App.utils.escape(_diff[i].value)+'</ins>';
                         } else {
-                            _diffhtml += _diff[i].value;
+                            _diffhtml += App.utils.escape(_diff[i].value);
                         }
                     }
                 }
@@ -113,6 +113,9 @@ export default {
                             }
                         })
                     }
+                }).catch(() => {
+                    this.loading = false;
+                    App.ui.notify('Loading diff library failed!', 'error');
                 });
 
             }).catch(rsp => {
