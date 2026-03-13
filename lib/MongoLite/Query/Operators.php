@@ -158,9 +158,10 @@ class Operators {
             case '$func':
             case '$fn':
             case '$f':
-                if (!\is_callable($conditionValue)) {
-                    throw new \InvalidArgumentException('Invalid argument for ' . $operator . ': function expected');
-                }
+                $conditionValue = \MongoLite\ClosureGuard::requireAnonymous(
+                    $conditionValue,
+                    'Invalid argument for ' . $operator . ': anonymous closure expected'
+                );
                 return (bool)$conditionValue($fieldValue);
 
             // Geo operators - simplified implementations

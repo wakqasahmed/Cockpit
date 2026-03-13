@@ -132,9 +132,16 @@ class Database {
 
         $id = \uniqid('criteria');
 
+        if ($criteria instanceof \Closure) {
+            $this->document_criterias[$id] = ClosureGuard::requireAnonymous(
+                $criteria,
+                'Criteria callable must be an anonymous Closure'
+            );
+            return $id;
+        }
+
         if (\is_callable($criteria)) {
-           $this->document_criterias[$id] = $criteria;
-           return $id;
+            throw new \InvalidArgumentException('Criteria callable must be an anonymous Closure');
         }
 
         if (\is_array($criteria)) {

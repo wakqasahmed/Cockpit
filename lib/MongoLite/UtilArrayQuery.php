@@ -64,9 +64,10 @@ class UtilArrayQuery {
                             break;
 
                         case '$where':
-                            if (\is_string($value) || !\is_callable($value)) {
-                                throw new \InvalidArgumentException($key . ' Function should be callable');
-                            }
+                            $value = \MongoLite\ClosureGuard::requireAnonymous(
+                                $value,
+                                $key . ' function should be an anonymous Closure'
+                            );
                             $uid = self::registerClosure($value);
                             if (!self::closureCall($uid, $document)) {
                                 return false;
@@ -274,7 +275,7 @@ class UtilArrayQuery {
     /**
      * Register a closure for $where queries
      */
-    protected static function registerClosure(callable $closure): string {
+    protected static function registerClosure(\Closure $closure): string {
         $uid = \uniqid('closure_');
         self::$closures[$uid] = $closure;
         return $uid;

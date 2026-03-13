@@ -1,5 +1,9 @@
 # Release Notes
 
+## WIP
+
+- MongoLite: Restrict query callbacks (`$func`, `$fn`, `$f`, `$where`, direct criteria callbacks) to anonymous closures only
+
 ## 2.13.5 (2026-03-09)
 
 - Add support for PHP 8.5+ compatible custom SQLite functions (IndexLite lib)
