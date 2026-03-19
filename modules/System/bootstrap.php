@@ -58,7 +58,22 @@ $this->module('system')->extend([
         return $url;
     },
 
-    'log' => function(string $message, string $channel = 'system', string $type = 'info', ?array $context = null) {
+    'log' => function(string $message, string $channel = 'system', string $type = 'info', mixed $context = null) {
+
+        // Convert context to array if possible, otherwise set to null
+        if ($context !== null && !is_array($context)) {
+            if (is_object($context) && method_exists($context, 'toArray')) {
+                $context = $context->toArray();
+            } elseif (is_object($context) || is_array($context)) {
+                $context = (array) $context;
+            } else {
+                $context = null;
+            }
+        }
+
+        if (!in_array($type, ['alert', 'debug', 'error', 'info', 'notice', 'warning'])) {
+            $type = 'info';
+        }
 
         $logger = $this->app->helper('log')->channel($channel);
 
