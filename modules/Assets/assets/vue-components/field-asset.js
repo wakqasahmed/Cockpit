@@ -33,18 +33,20 @@ export default {
 
             if (context === 'table-cell') {
 
+                let title = App.utils.escape(`${value.title} - ${value.mime}`);
+
                 if (value.type === 'image') {
 
                     const src = App.route(`/assets/thumbnail/${value._id}?m=bestFit&mime=auto&h=20&t=${value._modified}`);
 
-                    return `<img loading="lazy" class="kiss-responsive-height" src="${src}" style="height:20px" title="${value.title} - ${value.mime}">`;
+                    return `<img loading="lazy" class="kiss-responsive-height" src="${src}" style="height:20px" title="${title}">`;
                 }
 
                 return `
-                    <div class="kiss-flex kiss-flex-middle" gap="xsmall" title="${value.title} - ${value.mime}">
+                    <div class="kiss-flex kiss-flex-middle" gap="xsmall" title="${title}">
                         <div><kiss-svg width="35" height="35" src="${App.base(value.type === 'video' ? 'assets:assets/icons/video.svg' : 'assets:assets/icons/file.svg')}"><canvas width="35" height="35"></canvas></kiss-svg></div>
                         <div class="flex-item-1 kiss-size-xsmall">
-                            <div>${App.utils.truncate(value.title || 'n/a', 30)}</div>
+                            <div>${App.utils.truncate(App.utils.escape(value.title || 'n/a'), 30)}</div>
                             <div class="kiss-color-muted">${value.mime}</div>
                         </div>
                     </div>

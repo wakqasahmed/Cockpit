@@ -88,6 +88,8 @@ customElements.define('display-content', class extends HTMLElement {
                                 return str;
                             })();
 
+                    html = DOMPurify.sanitize(html);
+
                 } catch(e) {}
 
 
