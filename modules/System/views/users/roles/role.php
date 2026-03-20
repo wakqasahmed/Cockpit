@@ -73,11 +73,14 @@ foreach ($permissions as $key => $meta) {
 
                     <div class="kiss-margin" :class="{'kiss-hidden': !visible[group]}">
 
-                        <component :is="meta.component" v-model="role.permissions" v-bind="meta.props || {}" v-if="meta.component"></component>
+                        <component :is="meta.component" v-model="role.permissions" v-bind="meta.props || {}" :expressions="role.expressions" v-if="meta.component"></component>
 
                         <div v-if="!meta.component">
                             <div class="kiss-margin-small kiss-size-small" v-for="(label, permission) in meta">
-                                <field-boolean v-model="role.permissions[permission]" :label="t(label)"></field-boolean>
+                                <div class="kiss-flex kiss-flex-middle">
+                                    <field-boolean v-model="role.permissions[permission]" :label="t(label)"></field-boolean>
+                                    <a v-if="role.permissions[permission]" class="kiss-margin-small-start kiss-size-xsmall" :class="role.expressions[permission]?.expr ? 'kiss-color-primary' : 'kiss-color-muted'" @click.stop="editExpression(permission)" :title="t('Item rule')"><icon size="small">code</icon></a>
+                                </div>
                             </div>
                         </div>
 
@@ -113,9 +116,12 @@ foreach ($permissions as $key => $meta) {
 
                 data() {
 
+                    let role = <?= json_encode($role) ?>;
+                    if (!role.expressions) role.expressions = {};
+
                     return {
                         saving: false,
-                        role: <?= json_encode($role) ?>,
+                        role,
                         permissions: <?= json_encode($permissions) ?>,
                         visible: {},
                         filter: ''
@@ -144,6 +150,23 @@ foreach ($permissions as $key => $meta) {
 
                 methods: {
 
+                    editExpression(permission) {
+
+                        this.$dialog('system:assets/dialogs/acl-expression.js', {
+                            permission,
+                            expression: this.role.expressions[permission] || null
+                        }, {
+                            save: (entry) => {
+
+                                if (entry) {
+                                    this.role.expressions[permission] = entry;
+                                } else {
+                                    delete this.role.expressions[permission];
+                                }
+                            }
+                        });
+                    },
+
                     save() {
 
                         let isUpdate = this.role._id;
@@ -154,6 +177,7 @@ foreach ($permissions as $key => $meta) {
                             role: this.role
                         }).then(role => {
 
+                            if (!role.expressions) role.expressions = {};
                             this.role = role;
                             this.saving = false;
 

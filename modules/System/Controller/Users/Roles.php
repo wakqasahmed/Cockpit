@@ -33,6 +33,7 @@ class Roles extends App {
         $this->checkAndLockResource($id);
 
         $role['permissions'] = new ArrayObject($role['permissions']);
+        $role['expressions'] = new ArrayObject($role['expressions'] ?? []);
 
         return $this->render('system:views/users/roles/role.php', \compact('role'));
     }
@@ -43,7 +44,8 @@ class Roles extends App {
             'appid' => '',
             'name'  => '',
             'info'  => '',
-            'permissions' => new ArrayObject([])
+            'permissions' => new ArrayObject([]),
+            'expressions' => new ArrayObject([])
         ];
 
         return $this->render('system:views/users/roles/role.php', \compact('role'));
@@ -118,13 +120,40 @@ class Roles extends App {
             $role['permissions'] = [];
         }
 
+        // cleanup expressions
+        if (isset($role['expressions']) && \is_array($role['expressions'])) {
+
+            foreach ($role['expressions'] as $key => &$entry) {
+
+                if (!\is_array($entry) || empty(\trim((string)($entry['expr'] ?? '')))) {
+                    unset($role['expressions'][$key]);
+                    continue;
+                }
+
+                if (empty($role['permissions'][$key])) {
+                    unset($role['expressions'][$key]);
+                    continue;
+                }
+
+                // strip empty msg
+                if (isset($entry['msg']) && !\trim((string)$entry['msg'])) {
+                    unset($entry['msg']);
+                }
+            }
+
+            unset($entry);
+
+        } else {
+            $role['expressions'] = [];
+        }
 
         $this->app->trigger('app.roles.save', [&$role, $isUpdate]);
         $this->app->dataStorage->save('system/roles', $role);
 
         $role = $this->app->dataStorage->findOne('system/roles', ['_id' => $role['_id']]);
 
-        $role['permissions'] = new ArrayObject( $role['permissions']);
+        $role['permissions'] = new ArrayObject($role['permissions']);
+        $role['expressions'] = new ArrayObject($role['expressions'] ?? []);
 
         $this->cache();
 

@@ -15,6 +15,10 @@ export default {
         models: {
             type: Object,
             default: {}
+        },
+        expressions: {
+            type: Object,
+            default: {}
         }
     },
 
@@ -41,6 +45,30 @@ export default {
             }
 
             return models;
+        }
+    },
+
+    methods: {
+
+        hasExpr(permission) {
+            return this.expressions[permission]?.expr?.trim();
+        },
+
+        editExpression(permission) {
+
+            VueView.ui.modal('system:assets/dialogs/acl-expression.js', {
+                permission,
+                expression: this.expressions[permission] || null
+            }, {
+                save: (entry) => {
+
+                    if (entry) {
+                        this.expressions[permission] = entry;
+                    } else {
+                        delete this.expressions[permission];
+                    }
+                }
+            });
         }
     },
 
@@ -83,9 +111,21 @@ export default {
                                 <kiss-row class="kiss-flex kiss-margin-xsmall kiss-size-small" gap>
                                     <div><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/read']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/read']}">{{ t('Read')}}</span></div>
                                     <div v-if="modelValue['content/'+name+'/read']"><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/create']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/create']}">{{ t('Create') }}</span></div>
-                                    <div v-if="modelValue['content/'+name+'/read']"><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/update']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/update']}">{{ t('Update') }}</span></div>
-                                    <div v-if="modelValue['content/'+name+'/read']"><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/delete']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/delete']}">{{ t('Delete') }}</span></div>
-                                    <div v-if="modelValue['content/'+name+'/read']"><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/publish']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/publish']}">{{ t('Publish') }}</span></div>
+                                    <div v-if="modelValue['content/'+name+'/read']">
+                                        <input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/update']">
+                                        <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/update']}">{{ t('Update') }}</span>
+                                        <a v-if="modelValue['content/'+name+'/update']" class="kiss-margin-xsmall-start" :class="hasExpr('content/'+name+'/update') ? 'kiss-color-primary' : 'kiss-color-muted'" @click.stop="editExpression('content/'+name+'/update')"><icon size="small">code</icon></a>
+                                    </div>
+                                    <div v-if="modelValue['content/'+name+'/read']">
+                                        <input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/delete']">
+                                        <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/delete']}">{{ t('Delete') }}</span>
+                                        <a v-if="modelValue['content/'+name+'/delete']" class="kiss-margin-xsmall-start" :class="hasExpr('content/'+name+'/delete') ? 'kiss-color-primary' : 'kiss-color-muted'" @click.stop="editExpression('content/'+name+'/delete')"><icon size="small">code</icon></a>
+                                    </div>
+                                    <div v-if="modelValue['content/'+name+'/read']">
+                                        <input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/publish']">
+                                        <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/publish']}">{{ t('Publish') }}</span>
+                                        <a v-if="modelValue['content/'+name+'/publish']" class="kiss-margin-xsmall-start" :class="hasExpr('content/'+name+'/publish') ? 'kiss-color-primary' : 'kiss-color-muted'" @click.stop="editExpression('content/'+name+'/publish')"><icon size="small">code</icon></a>
+                                    </div>
                                     <div v-if="model.type == 'tree' && modelValue['content/'+name+'/read']"><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/updateorder']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/updateorder']}">{{ t('Reorder tree') }}</span></div>
                                 </kiss-row>
                             </div>
@@ -94,8 +134,16 @@ export default {
                                 <span class="kiss-text-caption">{{ t('Data') }}</span>
                                 <kiss-row class="kiss-flex kiss-margin-xsmall kiss-size-small" gap>
                                     <div><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/read']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/read']}">{{ t('Read')}}</span></div>
-                                    <div v-if="modelValue['content/'+name+'/read']"><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/update']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/update']}">{{ t('Update') }}</span></div>
-                                    <div v-if="modelValue['content/'+name+'/read']"><input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/publish']"> <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/publish']}">{{ t('Publish') }}</span></div>
+                                    <div v-if="modelValue['content/'+name+'/read']">
+                                        <input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/update']">
+                                        <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/update']}">{{ t('Update') }}</span>
+                                        <a v-if="modelValue['content/'+name+'/update']" class="kiss-margin-xsmall-start" :class="hasExpr('content/'+name+'/update') ? 'kiss-color-primary' : 'kiss-color-muted'" @click.stop="editExpression('content/'+name+'/update')"><icon size="small">code</icon></a>
+                                    </div>
+                                    <div v-if="modelValue['content/'+name+'/read']">
+                                        <input class="kiss-checkbox kiss-margin-xsmall-end" type="checkbox" v-model="modelValue['content/'+name+'/publish']">
+                                        <span :class="{'kiss-color-muted':!modelValue['content/'+name+'/publish']}">{{ t('Publish') }}</span>
+                                        <a v-if="modelValue['content/'+name+'/publish']" class="kiss-margin-xsmall-start" :class="hasExpr('content/'+name+'/publish') ? 'kiss-color-primary' : 'kiss-color-muted'" @click.stop="editExpression('content/'+name+'/publish')"><icon size="small">code</icon></a>
+                                    </div>
                                 </kiss-row>
                             </div>
                         </kiss-row>
