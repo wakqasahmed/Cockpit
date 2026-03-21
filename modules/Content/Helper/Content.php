@@ -146,7 +146,7 @@ class Content extends \Lime\Helper {
 
             $mfield = \array_find($model['fields'], fn($f) => $f['name'] === $field);
 
-            if ($mfield && $mfield['i18n']) {
+            if ($mfield && ($mfield['i18n'] ?? false)) {
 
                 foreach ($locales as $locale) {
                     $key = "{$field}_{$locale}";

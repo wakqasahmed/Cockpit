@@ -18,6 +18,7 @@ The Content module provides a flexible, headless content management system with 
 - **Custom Fields** - Create your own field types with Vue.js components
 - **Field Validation** - Required fields, patterns, min/max values
 - **Conditional Fields** - Show/hide fields based on other field values
+- **Computed Fields** - Derive field values on save with `meta.computed` ScriptLite expressions
 
 ### 🌍 **Multi-language Support**
 - **Localized Content** - Per-field localization with fallback support
@@ -187,6 +188,42 @@ $fields = [
     ['name' => 'sku', 'type' => 'text']                          // Global
 ];
 ```
+
+### Computed Fields
+
+Use `meta.computed` to derive field values on save. Each key in the map must be an existing field name, and each value must be a ScriptLite expression.
+
+```php
+$app->module('content')->createModel('posts', [
+    'type' => 'collection',
+    'fields' => [
+        ['name' => 'title', 'type' => 'text', 'required' => true],
+        ['name' => 'body', 'type' => 'wysiwyg'],
+        ['name' => 'slug', 'type' => 'text'],
+        ['name' => 'summary', 'type' => 'text'],
+    ],
+    'meta' => [
+        'computed' => [
+            'slug' => 'slugify(item.title ?? "")',
+            'summary' => 'item.slug ? `${item.slug}:${item.body ?? ""}` : value',
+        ],
+    ],
+]);
+```
+
+Computed expressions run server-side during `saveItem()` and receive these globals:
+
+- `item` - The current item data being saved
+- `value` - The current value of the target field before recomputing
+- `field` - The target field name
+- `context` - Full save context passed into `saveItem()`
+- `model` - The content model definition
+- `user` - Current user from the save context when available
+- `isUpdate` - Whether the save is an update
+- `now` - Save timestamp
+- `slugify()` - Helper for generating slugs
+
+Computed fields are recalculated on create and update. For collection and tree updates, expressions run against the merged persisted item plus the incoming payload, so sparse updates can still compute from existing values.
 
 ## 🌐 Multi-language Support
 

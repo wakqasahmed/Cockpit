@@ -55,19 +55,23 @@ $this->module('content')->extend([
         return $this->app->helper('content.model')->model($name);
     },
 
-    'getDefaultModelItem' => function(string $model): array {
+    'getDefaultModelItem' => function(string|array $model): array {
 
         $item = [];
-        $model = $this->model($model);
+        $model = \is_string($model) ? $this->model($model) : $model;
 
         if (!$model) {
-            return $item;
+            return [];
         }
 
-        $fields = $model['fields'];
+        $fields = $model['fields'] ?? [];
         $locales = $this->app->helper('locales')->locales();
 
         foreach ($fields as $field) {
+
+            if (!isset($field['name'])) {
+                continue;
+            }
 
             $name = $field['name'];
             $default = $field['opts']['default'] ?? null;
@@ -103,10 +107,10 @@ $this->module('content')->extend([
 
         $time = time();
         $default = $this->getDefaultModelItem($modelName);
-        $keys = array_keys($default);
         $isUpdate = false;
 
         $collection = null;
+        $current = null;
 
         if (isset($item['_state']) && !is_numeric($item['_state'])) {
             unset($item['_state']);
@@ -132,18 +136,31 @@ $this->module('content')->extend([
 
             if (isset($item['_id'])) {
                 $isUpdate = true;
+                $current = $this->app->dataStorage->findOne($collection, ['_id' => $item['_id']]);
+
+                if ($current) {
+                    $item = array_merge($current, $item);
+                }
             } else {
                 $item = array_merge($default, $item);
             }
+        }
 
-            // check unique configured fields
+        $item = $this->app->helper('content.model')->applyComputedFields(
+            $model,
+            $item,
+            $isUpdate,
+            \array_merge($context, ['now' => $time])
+        );
+
+        if (
+            in_array($model['type'], ['collection', 'tree']) &&
+            isset($model['meta']['unique']) &&
+            $model['meta']['unique']
+        ) {
             $uniqueCheckInfo = [];
 
-            if (
-                isset($model['meta']['unique']) &&
-                $model['meta']['unique'] &&
-                !$this->app->helper('content')->isContentUnique($model, $item, $model['meta']['unique'], $uniqueCheckInfo)
-            ) {
+            if (!$this->app->helper('content')->isContentUnique($model, $item, $model['meta']['unique'], $uniqueCheckInfo)) {
                 throw new \App\Exception\AppNotification("::{$uniqueCheckInfo['field']}:: must be unique");
             }
         }
