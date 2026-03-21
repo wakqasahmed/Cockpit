@@ -119,7 +119,7 @@ class Utils extends \Lime\Helper {
      * @param bool|true $tolower
      * @return string
      */
-    public function sluggify(string $string, string $replacement = '-', bool $tolower = true): string {
+    public function slugify(string $string, string $replacement = '-', bool $tolower = true): string {
 
         if (empty($string)) return '';
 

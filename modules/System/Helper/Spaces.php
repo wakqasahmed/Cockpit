@@ -154,7 +154,7 @@ class Spaces extends \Lime\Helper {
         ], $options);
 
         $fs = $this->app->helper('fs');
-        $name = $this->app->helper('utils')->sluggify(\trim($name));
+        $name = $this->app->helper('utils')->slugify(\trim($name));
         $path = APP_SPACES_DIR."/{$name}";
 
         // Space
