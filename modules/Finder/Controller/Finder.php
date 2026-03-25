@@ -179,7 +179,7 @@ class Finder extends App {
         $name = $this->param('name', false);
         $ret  = false;
 
-        if ($name && $path) {
+        if ($name && $path && $this->_isValidFilename($name)) {
             $ret = \mkdir($this->root.'/'.\trim($path, '/').'/'.$name);
         }
 
@@ -196,7 +196,7 @@ class Finder extends App {
         $file = $this->root.'/'.\trim($path, '/').'/'.$name;
         $ret  = false;
 
-        if ($name && $this->_isFileTypeAllowed($name) && $path) {
+        if ($name && $this->_isValidFilename($name) && $this->_isFileTypeAllowed($name) && $path) {
             $ret = @\file_put_contents($file, '');
         }
 
@@ -208,11 +208,13 @@ class Finder extends App {
 
         $paths     = (array)$this->param('paths', []);
         $deletions = [];
+        $rootPath = \realpath($this->root);
 
         foreach ($paths as $path) {
 
-            // Path traversal protection
-            if (\str_contains($path, '../') || \str_contains($path, '..\\') || \str_contains($path, "\0")) {
+            $path = $this->_normalizeRelativePath($path, false);
+
+            if ($path === false) {
                 continue;
             }
 
@@ -220,7 +222,7 @@ class Finder extends App {
 
             // Verify resolved path is within root
             $realPath = \realpath($delpath);
-            if (!$realPath || !\str_starts_with($realPath, \realpath($this->root))) {
+            if (!$realPath || !$rootPath || !\str_starts_with($realPath, $rootPath)) {
                 continue;
             }
 
@@ -474,18 +476,45 @@ class Finder extends App {
 
     protected function _getPathParameter() {
 
-        $path = $this->param('path', false);
+        return $this->_normalizeRelativePath($this->param('path', false), '/');
+    }
 
-        if ($path) {
+    protected function _normalizeRelativePath(mixed $path, string|false $rootValue = '/'): string|false {
 
-            $path = \trim($path);
-
-            if (\str_contains($path, '../')) {
-                $path = false;
-            }
+        if ($path === false || $path === null) {
+            return false;
         }
 
-        return $path;
+        $path = \trim((string)$path);
+
+        if ($path === '' || $path === '.' || $path === '/') {
+            return $rootValue;
+        }
+
+        $path = \str_replace('\\', '/', \trim($path, '/'));
+
+        if (\str_contains($path, "\0")) {
+            return false;
+        }
+
+        $parts = [];
+
+        foreach (\explode('/', $path) as $part) {
+
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+
+            if ($part === '..') {
+                return false;
+            }
+
+            $parts[] = $part;
+        }
+
+        $normalized = \implode('/', $parts);
+
+        return $normalized !== '' ? $normalized : $rootValue;
     }
 
     protected function _isFileTypeAllowed($file) {

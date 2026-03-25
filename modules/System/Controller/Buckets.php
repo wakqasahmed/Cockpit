@@ -50,7 +50,7 @@ class Buckets extends App {
             return $data;
         }
 
-        $dir = $this->root.'/'.$path;
+        $dir = $this->_bucketPath($path);
         $data['path'] = $dir;
 
         if ($this->app->fileStorage->has($dir)){
@@ -114,8 +114,14 @@ class Buckets extends App {
         $name = $this->param('name', false);
         $ret  = false;
 
-        if ($name) {
-            $ret = $this->app->fileStorage->createDirectory($this->root.'/'.$path.'/'.$name);
+        if ($name && $this->_isValidItemName($name)) {
+            $target = $this->_bucketPath(\trim($path ? "{$path}/{$name}" : $name, '/'));
+
+            try {
+                $this->app->fileStorage->createDirectory($target);
+                $ret = $this->app->fileStorage->directoryExists($target);
+            } catch (\Throwable $e) {
+            }
         }
 
         return \json_encode(['success' => $ret]);
@@ -126,18 +132,39 @@ class Buckets extends App {
         $path = $this->_getPathParameter();
 
         if ($path === false) return false;
+        if ($path === '') return \json_encode(['success' => false]);
 
         $name = $this->param('name', false);
+        $success = false;
 
-        if ($name && $this->_isFileTypeAllowed($name)) {
-
-            $source = $this->root.'/'.$path;
-            $target = $this->root.'/'.$name;
-
-            $this->app->fileStorage->move($source, $target);
+        if (!$this->_isValidItemName($name)) {
+            return $this->stop(['error' => 'Invalid file name'], 412);
         }
 
-        return \json_encode(['success' => true]);
+        $source = $this->_bucketPath($path);
+
+        if (
+            !$this->app->fileStorage->fileExists($source) &&
+            !$this->app->fileStorage->directoryExists($source)
+        ) {
+            return \json_encode(['success' => false]);
+        }
+
+        if ($this->app->fileStorage->fileExists($source) && !$this->_isFileTypeAllowed($name)) {
+            return \json_encode(['success' => false]);
+        }
+
+        $dirname = \dirname($path);
+        $targetPath = $dirname === '.' ? $name : "{$dirname}/{$name}";
+        $target = $this->_bucketPath($targetPath);
+
+        try {
+            $this->app->fileStorage->move($source, $target);
+            $success = true;
+        } catch (\Throwable $e) {
+        }
+
+        return \json_encode(['success' => $success]);
     }
 
     protected function removefiles() {
@@ -147,7 +174,13 @@ class Buckets extends App {
 
         foreach ($paths as $path) {
 
-            $delpath = $this->root.'/'.\trim($path, '/');
+            $path = $this->_normalizeRelativePath($path);
+
+            if ($path === false || $path === '') {
+                continue;
+            }
+
+            $delpath = $this->_bucketPath($path);
 
             if ($this->app->fileStorage->directoryExists($delpath)) {
                 $this->app->fileStorage->deleteDirectory($delpath);
@@ -168,7 +201,7 @@ class Buckets extends App {
         if ($path === false) return false;
 
         $files      = $_FILES['files'] ?? [];
-        $targetpath = \trim($this->root.'/'.$path, '/');
+        $targetpath = $this->_bucketPath($path);
         $uploaded   = [];
         $failed     = [];
 
@@ -228,18 +261,66 @@ class Buckets extends App {
 
     protected function _getPathParameter() {
 
-        $path = $this->param('path', false);
+        return $this->_normalizeRelativePath($this->param('path', false));
+    }
 
-        if ($path) {
+    protected function _normalizeRelativePath(mixed $path): string|false {
 
-            $path = \trim(\trim($path, '/'));
-
-            if (\str_contains($path, '../')) {
-                $path = false;
-            }
+        if ($path === false || $path === null) {
+            return false;
         }
 
-        return $path;
+        $path = \trim((string)$path);
+
+        if ($path === '' || $path === '.' || $path === '/') {
+            return '';
+        }
+
+        $path = \str_replace('\\', '/', \trim($path, '/'));
+
+        if (\str_contains($path, "\0")) {
+            return false;
+        }
+
+        $parts = [];
+
+        foreach (\explode('/', $path) as $part) {
+
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+
+            if ($part === '..') {
+                return false;
+            }
+
+            $parts[] = $part;
+        }
+
+        return \implode('/', $parts);
+    }
+
+    protected function _bucketPath(string $path = ''): string {
+        return $path !== '' ? "{$this->root}/{$path}" : $this->root;
+    }
+
+    protected function _isValidItemName(mixed $name): bool {
+
+        if (!\is_string($name)) {
+            return false;
+        }
+
+        $name = \trim($name);
+
+        if ($name === '' || $name === '.' || $name === '..') {
+            return false;
+        }
+
+        if (\str_contains($name, "\0")) {
+            return false;
+        }
+
+        return !\preg_match('/[\/\\\\:*?"<>|]/', $name);
     }
 
     protected function _isFileTypeAllowed($file) {
