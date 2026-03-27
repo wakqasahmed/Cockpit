@@ -11,27 +11,148 @@
 
 class Thumbhash {
 
-    public static function fromFile(string $file): array {
+    private const MAX_SIZE = 100;
 
-        $image = imagecreatefromstring(file_get_contents($file));
+    private static function assertPositiveDimensions(int $w, int $h, string $context): void {
 
-        $width = imagesx($image);
-        $height = imagesy($image);
+        if ($w < 1 || $h < 1) {
+            throw new \InvalidArgumentException("{$context} dimensions must be positive");
+        }
+    }
 
-        $pixels = [];
-        for ($y = 0; $y < $height; $y++) {
-            for ($x = 0; $x < $width; $x++) {
-                $color_index = imagecolorat($image, $x, $y);
-                $color = imagecolorsforindex($image, $color_index);
-                $alpha = 255 - ceil($color['alpha'] * (255 / 127)); // GD only supports 7-bit alpha channel
-                $pixels[] = $color['red'];
-                $pixels[] = $color['green'];
-                $pixels[] = $color['blue'];
-                $pixels[] = $alpha;
+    private static function requirePixelData(array $rgba, int $expectedLength): array {
+
+        $rgba = array_values($rgba);
+
+        if (count($rgba) < $expectedLength) {
+            throw new \InvalidArgumentException("RGBA pixel data must contain at least {$expectedLength} values");
+        }
+
+        return $rgba;
+    }
+
+    private static function countACComponents(int $nx, int $ny): int {
+
+        $count = 0;
+
+        for ($cy = 0; $cy < $ny; $cy++) {
+            for ($cx = $cy ? 0 : 1; $cx * $ny < $nx * ($ny - $cy); $cx++) {
+                $count++;
             }
         }
 
-        return self::RGBAToHash($width, $height, $pixels);
+        return $count;
+    }
+
+    private static function requireHash(array $hash): array {
+
+        $hash = array_values($hash);
+
+        if (count($hash) < 5) {
+            throw new \InvalidArgumentException('ThumbHash must contain at least 5 bytes');
+        }
+
+        $header24 = (int)$hash[0] | ((int)$hash[1] << 8) | ((int)$hash[2] << 16);
+        $header16 = (int)$hash[3] | ((int)$hash[4] << 8);
+        $hasAlpha = (bool)($header24 >> 23);
+        $isLandscape = (bool)($header16 >> 15);
+        $size = $header16 & 7;
+        $lx = max(3, $isLandscape ? ($hasAlpha ? 5 : 7) : $size);
+        $ly = max(3, $isLandscape ? $size : ($hasAlpha ? 5 : 7));
+        $acCount = self::countACComponents($lx, $ly) + self::countACComponents(3, 3) + self::countACComponents(3, 3);
+
+        if ($hasAlpha) {
+            $acCount += self::countACComponents(5, 5);
+        }
+
+        $requiredLength = ($hasAlpha ? 6 : 5) + (int)ceil($acCount / 2);
+
+        if (count($hash) < $requiredLength) {
+            throw new \InvalidArgumentException("ThumbHash is truncated. Expected at least {$requiredLength} bytes, got " . count($hash));
+        }
+
+        return $hash;
+    }
+
+    private static function resizeImageToFit(\GdImage $image, int &$width, int &$height): \GdImage {
+
+        if ($width <= self::MAX_SIZE && $height <= self::MAX_SIZE) {
+            return $image;
+        }
+
+        $scale = min(self::MAX_SIZE / $width, self::MAX_SIZE / $height);
+        $targetWidth = max(1, (int)round($width * $scale));
+        $targetHeight = max(1, (int)round($height * $scale));
+        $resized = @imagecreatetruecolor($targetWidth, $targetHeight);
+
+        if (!$resized instanceof \GdImage) {
+            throw new \RuntimeException("Unable to resize image to {$targetWidth}x{$targetHeight}");
+        }
+
+        imagealphablending($resized, false);
+        imagesavealpha($resized, true);
+
+        $transparent = imagecolorallocatealpha($resized, 0, 0, 0, 127);
+
+        if ($transparent === false) {
+            imagedestroy($resized);
+            throw new \RuntimeException('Unable to preserve alpha channel while resizing image');
+        }
+
+        imagefilledrectangle($resized, 0, 0, $targetWidth, $targetHeight, $transparent);
+
+        if (!imagecopyresampled($resized, $image, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height)) {
+            imagedestroy($resized);
+            throw new \RuntimeException('Unable to resample image for ThumbHash encoding');
+        }
+
+        imagedestroy($image);
+
+        $width = $targetWidth;
+        $height = $targetHeight;
+
+        return $resized;
+    }
+
+    public static function fromFile(string $file): array {
+
+        $data = @file_get_contents($file);
+
+        if ($data === false) {
+            throw new \InvalidArgumentException("Unable to read image file: {$file}");
+        }
+
+        $image = @imagecreatefromstring($data);
+
+        if (!$image instanceof \GdImage) {
+            throw new \InvalidArgumentException("Invalid or unsupported image file: {$file}");
+        }
+
+        try {
+            $width = imagesx($image);
+            $height = imagesy($image);
+
+            self::assertPositiveDimensions($width, $height, 'Image');
+
+            $image = self::resizeImageToFit($image, $width, $height);
+
+            $pixels = [];
+            for ($y = 0; $y < $height; $y++) {
+                for ($x = 0; $x < $width; $x++) {
+                    $color_index = imagecolorat($image, $x, $y);
+                    $color = imagecolorsforindex($image, $color_index);
+                    $alpha = 255 - ceil($color['alpha'] * (255 / 127)); // GD only supports 7-bit alpha channel
+                    $pixels[] = $color['red'];
+                    $pixels[] = $color['green'];
+                    $pixels[] = $color['blue'];
+                    $pixels[] = $alpha;
+                }
+            }
+
+            return self::RGBAToHash($width, $height, $pixels);
+        } finally {
+            imagedestroy($image);
+        }
     }
 
     /**
@@ -45,10 +166,14 @@ class Thumbhash {
      */
 
     public static function RGBAToHash(int $w, int $h, array $rgba): array {
+        self::assertPositiveDimensions($w, $h, 'Image');
+
         // Encoding an image larger than 100x100 is slow with no benefit
-        if ($w > 100 || $h > 100) {
+        if ($w > self::MAX_SIZE || $h > self::MAX_SIZE) {
             throw new \Exception("{$w}x{$h} doesn't fit in 100x100");
         }
+
+        $rgba = self::requirePixelData($rgba, $w * $h * 4);
 
         // Determine the average color
         $avg_r = 0;
@@ -165,11 +290,30 @@ class Thumbhash {
     }
 
     public static function convertHashToString(array $hash): string {
-        return rtrim(base64_encode(implode(array_map('chr', $hash))), '=');
+        return rtrim(base64_encode(implode(array_map('chr', array_values($hash)))), '=');
     }
 
     public static function convertStringToHash(string $str): array {
-        return array_map('ord', str_split(base64_decode("{$str}=")));
+        $str = trim($str);
+
+        if ($str === '') {
+            throw new \InvalidArgumentException('ThumbHash string must not be empty');
+        }
+
+        $trimmed = rtrim($str, '=');
+        $remainder = strlen($trimmed) % 4;
+
+        if ($remainder === 1) {
+            throw new \InvalidArgumentException('ThumbHash string has an invalid base64 length');
+        }
+
+        $decoded = base64_decode($trimmed . str_repeat('=', (4 - $remainder) % 4), true);
+
+        if ($decoded === false || $decoded === '') {
+            throw new \InvalidArgumentException('ThumbHash string could not be decoded');
+        }
+
+        return self::requireHash(array_values(unpack('C*', $decoded)));
     }
 
     /**
@@ -179,6 +323,8 @@ class Thumbhash {
      * @return array The width, height, and pixels of the rendered placeholder image.
      */
     public static function hashToRGBA(array $hash): array {
+        $hash = self::requireHash($hash);
+
         // Read the constants
         $header24 = $hash[0] | ($hash[1] << 8) | ($hash[2] << 16);
         $header16 = $hash[3] | ($hash[4] << 8);
@@ -193,7 +339,7 @@ class Thumbhash {
         $lx = max(3, ($isLandscape ? $hasAlpha ? 5 : 7 : $header16 & 7));
         $ly = max(3, ($isLandscape ? $header16 & 7 : ($hasAlpha ? 5 : 7)));
         $a_dc = $hasAlpha ? ($hash[5] & 15) / 15 : 1;
-        $a_scale = ($hash[5] >> 4) / 15;
+        $a_scale = $hasAlpha ? (($hash[5] >> 4) / 15) : 0;
 
         // Read the varying factors (boost saturation by 1.25x to compensate for quantization)
         $ac_start = $hasAlpha ? 6 : 5;
@@ -282,6 +428,8 @@ class Thumbhash {
      * @return array The RGBA values for the average color. Each value ranges from 0 to 1.
      */
     public static function toAverageRGBA(array $hash): array {
+        $hash = self::requireHash($hash);
+
         $header = $hash[0] | ($hash[1] << 8) | ($hash[2] << 16);
         $l = ($header & 63) / 63;
         $p = (($header >> 6) & 63) / 31.5 - 1;
@@ -308,11 +456,14 @@ class Thumbhash {
      * @return float The approximate aspect ratio (i.e. width / height).
      */
     public static function toApproximateAspectRatio(array $hash): float {
+        $hash = self::requireHash($hash);
+
         $header = $hash[3];
         $hasAlpha = $hash[2] & 0x80;
         $isLandscape = $hash[4] & 0x80;
-        $lx = $isLandscape ? ($hasAlpha ? 5 : 7) : ($header & 7);
-        $ly = $isLandscape ? ($header & 7) : ($hasAlpha ? 5 : 7);
+        $size = max(1, $header & 7);
+        $lx = $isLandscape ? ($hasAlpha ? 5 : 7) : $size;
+        $ly = $isLandscape ? $size : ($hasAlpha ? 5 : 7);
 
         return $lx / $ly;
     }
@@ -328,6 +479,9 @@ class Thumbhash {
      * @returns String A data URL containing a PNG for the input image.
      */
     public static function rgbaToDataURL(int $w, int $h, array $rgba): string {
+        self::assertPositiveDimensions($w, $h, 'Image');
+        $rgba = self::requirePixelData($rgba, $w * $h * 4);
+
         $row = $w * 4 + 1;
         $idat = 6 + $h * (5 + $row);
         $bytes = [

@@ -9,6 +9,7 @@
 - Content: Add `meta.computed` ScriptLite support for save-time computed fields
 - Fix Bucket path traversal vulnerability
 - Enhance SVG file handling during uploads
+- Improve Thumbhash class with enhanced validation and error handling
 
 ## 2.13.5 (2026-03-09)
 
