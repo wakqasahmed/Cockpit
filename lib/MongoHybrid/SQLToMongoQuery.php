@@ -148,8 +148,8 @@ class SQLToMongoQuery
                 |
                 (?<operator><=|>=|!=|<>|=|<|>) # Comparison operators (longest first)
                 |
-                # Keywords (case-insensitive match using (?i:...))
-                (?<keyword>(?i:AND|OR|NOT|IN|LIKE|IS|NULL|BETWEEN|REGEXP|TRUE|FALSE|ESCAPE))
+                # Keywords (case-insensitive match, but only when not followed by identifier chars)
+                (?<keyword>(?i:AND|OR|NOT|IN|LIKE|IS|NULL|BETWEEN|REGEXP|TRUE|FALSE|ESCAPE)(?![a-zA-Z0-9_\.]))
                 |
                 # Plain Identifiers (field names, potentially dotted)
                 (?<identifier>[a-zA-Z_][a-zA-Z0-9_\.]*)
@@ -487,7 +487,7 @@ class SQLToMongoQuery
             );
         }
         $fieldToken = $this->tokens[$this->position++];
-        $field = $this->parseIdentifier($fieldToken['value']); // Handle backticks
+        $field = $this->parseIdentifier($fieldToken['value'], $this->position - 1); // Handle backticks and validate
 
         if ($this->position >= \count($this->tokens)) {
             $this->throwParsingException("Unexpected end of query after field name '{$field}'", null, true);
@@ -975,16 +975,62 @@ class SQLToMongoQuery
      * @param string $identifier The raw identifier token value.
      * @return string The cleaned identifier name.
      */
-    private function parseIdentifier(string $identifier): string
+    private function parseIdentifier(string $identifier, ?int $tokenIndex = null): string
     {
         if (\str_starts_with($identifier, '`') && \str_ends_with($identifier, '`')) {
             // Remove outer backticks (first and last char)
             $inner = \substr($identifier, 1, -1);
             // Unescape internal escaped backticks (\`)
-            return \str_replace('\\`', '`', $inner);
+            $identifier = \str_replace('\\`', '`', $inner);
         }
-        // Return plain identifier (like table.column or simple_field) directly
-        return $identifier;
+
+        return $this->validateFieldIdentifier($identifier, $tokenIndex);
+    }
+
+    /**
+     * Validates that a parsed identifier is safe to use as a MongoDB field path.
+     *
+     * Rejects empty paths, empty dot segments, null bytes, and any segment that
+     * starts with '$' to prevent operator injection such as `$where` or `a.$or`.
+     *
+     * @param string $field
+     * @param ?int $tokenIndex
+     * @return string
+     */
+    private function validateFieldIdentifier(string $field, ?int $tokenIndex = null): string
+    {
+        if ($field === '' || \str_contains($field, "\0")) {
+            $this->throwParsingException(
+                "Invalid field name '{$field}'",
+                $field,
+                false,
+                $tokenIndex
+            );
+        }
+
+        $segments = \explode('.', $field);
+
+        foreach ($segments as $segment) {
+            if ($segment === '') {
+                $this->throwParsingException(
+                    "Invalid field path '{$field}': empty path segment",
+                    $field,
+                    false,
+                    $tokenIndex
+                );
+            }
+
+            if (\str_starts_with($segment, '$')) {
+                $this->throwParsingException(
+                    "Invalid field path '{$field}': MongoDB operator-like segments are not allowed",
+                    $field,
+                    false,
+                    $tokenIndex
+                );
+            }
+        }
+
+        return $field;
     }
 
 
@@ -1327,6 +1373,24 @@ class SQLToMongoQuery
                 return [$field => [self::MGO_NOT => $condition]];
             }
             
+            if (
+                \count($condition) === 2
+                && ($condition[self::MGO_EXISTS] ?? null) === true
+                && \array_key_exists(self::MGO_EQ, $condition)
+                && $condition[self::MGO_EQ] === null
+            ) {
+                return [$field => [self::MGO_EXISTS => true, self::MGO_NE => null]];
+            }
+
+            if (
+                \count($condition) === 2
+                && ($condition[self::MGO_EXISTS] ?? null) === true
+                && \array_key_exists(self::MGO_NE, $condition)
+                && $condition[self::MGO_NE] === null
+            ) {
+                return [$field => [self::MGO_EXISTS => true, self::MGO_EQ => null]];
+            }
+
             // Multiple operators on same field (e.g., BETWEEN creates { $gte: a, $lte: b })
             // We need to negate this as OR of inverses
             if (isset($condition[self::MGO_GTE]) && isset($condition[self::MGO_LTE])) {
