@@ -1,20 +1,20 @@
 <?php
 
-
 /**
- * Class SVGSanitizer
+ * Strict SVG sanitizer for uploaded SVG assets.
  *
- * simplified/compact version of svg-sanitizer - https://github.com/darylldoyle/svg-sanitizer by Daryll Doyle
- *
- * @package enshrined\svgSanitize
+ * This implementation is intentionally SVG-focused. Generic XML files should
+ * not be passed through it, because it strips unsafe XML constructs and only
+ * preserves a vetted subset of SVG elements, attributes, and CSS.
  */
 class SVGSanitizer
 {
 
-    /**
-     * Regex to catch script and data values in attributes
-     */
-    protected const SCRIPT_REGEX = '/(?:\w+script|data):/xi';
+    protected const ALLOWED_DATA_IMAGE_REGEX = '/^data:image\/(?:avif|gif|jpe?g|pjpeg|png|webp)(?:;base64)?,/i';
+    protected const FORBIDDEN_CSS_PATTERN = '/(?:@import|@namespace|expression\s*\(|behaviou?r\s*:|-moz-binding|javascript\s*:|vbscript\s*:|livescript\s*:|mocha\s*:)/i';
+    protected const REMOTE_URI_SCHEMES = ['http', 'https', 'ftp'];
+    protected const SAFE_LINK_SCHEMES = ['http', 'https', 'mailto', 'tel'];
+    protected const SAFE_IMAGE_SCHEMES = ['http', 'https'];
 
     /**
      * @var DOMDocument
@@ -24,17 +24,17 @@ class SVGSanitizer
     /**
      * @var array
      */
-    protected $allowedTags;
+    protected $allowedTags = [];
 
     /**
      * @var array
      */
-    protected $allowedAttrs;
+    protected $allowedAttrs = [];
 
     /**
-     * @var
+     * @var array
      */
-    protected $xmlLoaderValue;
+    protected $allowedCssProperties = [];
 
     /**
      * @var bool
@@ -59,6 +59,9 @@ class SVGSanitizer
 
     /**
      * SVGSanitizer::clean('<svg ...>')
+     *
+     * @param string $svgText
+     * @return string|false
      */
     public static function clean($svgText) {
 
@@ -68,192 +71,123 @@ class SVGSanitizer
     }
 
     /**
+     * Sanitize an SVG file in place.
+     *
+     * @param string $path
+     * @return bool
+     */
+    public static function sanitizeFile($path) {
+
+        $dirty = @file_get_contents($path);
+
+        if (!is_string($dirty)) {
+            return false;
+        }
+
+        $sanitizer = new static();
+        $sanitizer->removeRemoteReferences(true);
+
+        $clean = $sanitizer->sanitize($dirty);
+
+        if (!is_string($clean)) {
+            return false;
+        }
+
+        return @file_put_contents($path, $clean) !== false;
+    }
+
+    /**
      *
      */
     public function __construct()
     {
-        // Load default tags/attributes
-        $this->allowedAttrs = [
-
-            // HTML
-            'accept', 'action', 'align', 'alt', 'autocomplete',
-            'background', 'bgcolor', 'border',
-            'cellpadding', 'cellspacing', 'checked', 'cite', 'class', 'clear', 'color', 'cols', 'colspan', 'coords', 'crossorigin',
-            'datetime', 'default', 'dir', 'disabled', 'download',
-            'enctype',
-            'face', 'for',
-            'headers', 'height', 'hidden', 'high', 'href', 'hreflang',
-            'id', 'integrity', 'ismap',
-            'label', 'lang', 'list', 'loop', 'low',
-            'max', 'maxlength', 'media', 'method', 'min', 'multiple',
-            'name', 'noshade', 'novalidate', 'nowrap',
-            'open', 'optimum',
-            'pattern', 'placeholder', 'poster', 'preload', 'pubdate',
-            'radiogroup', 'readonly', 'rel', 'required', 'rev', 'reversed', 'role', 'rows', 'rowspan',
-            'spellcheck', 'scope', 'selected', 'shape', 'size', 'sizes', 'span', 'srclang', 'start', 'src', 'srcset', 'step', 'style', 'summary',
-            'tabindex', 'title', 'type',
-            'usemap',
-            'valign', 'value',
-            'width',
-            'xmlns',
-
-            // SVG
-            'accent-height', 'accumulate', 'additivive', 'alignment-baseline', 'ascent', 'attributename', 'attributetype', 'azimuth',
+        $this->allowedAttrs = $this->normalizeWhitelist([
+            'accent-height', 'accumulate', 'additive', 'alignment-baseline', 'ascent',
+            'attributename', 'attributetype', 'azimuth',
             'basefrequency', 'baseline-shift', 'begin', 'bias', 'by',
-            'class', 'clip', 'clip-path', 'clip-rule', 'color', 'color-interpolation', 'color-interpolation-filters', 'color-profile', 'color-rendering', 'cx', 'cy',
+            'class', 'clip', 'clip-path', 'clip-rule', 'color', 'color-interpolation',
+            'color-interpolation-filters', 'color-profile', 'color-rendering', 'crossorigin',
+            'cx', 'cy',
             'd', 'dx', 'dy', 'diffuseconstant', 'direction', 'display', 'divisor', 'dur',
             'edgemode', 'elevation', 'end',
-            'fill', 'fill-opacity', 'fill-rule', 'filter', 'filterUnits', 'flood-color', 'flood-opacity', 'font-family', 'font-size', 'font-size-adjust', 'font-stretch', 'font-style', 'font-variant', 'font-weight', 'fx', 'fy',
-            'g1', 'g2', 'glyph-name', 'glyphref', 'gradientunits', 'gradienttransform',
+            'fill', 'fill-opacity', 'fill-rule', 'filter', 'filterunits', 'flood-color',
+            'flood-opacity', 'font-family', 'font-size', 'font-size-adjust', 'font-stretch',
+            'font-style', 'font-variant', 'font-weight', 'fx', 'fy',
+            'g1', 'g2', 'glyph-name', 'glyphref', 'gradienttransform', 'gradientunits',
             'height', 'href',
             'id', 'image-rendering', 'in', 'in2',
             'k', 'k1', 'k2', 'k3', 'k4', 'kerning', 'keypoints', 'keysplines', 'keytimes',
-            'lang', 'lengthadjust', 'letter-spacing',
             'kernelmatrix', 'kernelunitlength',
+            'lang', 'lengthadjust', 'letter-spacing',
             'lighting-color', 'local',
-            'marker-end', 'marker-mid', 'marker-start', 'markerheight', 'markerunits', 'markerwidth', 'maskcontentunits', 'maskunits', 'max', 'mask', 'mask-type', 'media', 'method', 'mode', 'min',
-            'name', 'numoctaves',
-            'offset', 'operator', 'opacity', 'order', 'orient', 'orientation', 'origin', 'overflow',
-            'paint-order', 'path', 'pathlength', 'patterncontentunits', 'patterntransform', 'patternunits', 'points', 'preservealpha', 'preserveaspectratio',
-            'r', 'rx', 'ry', 'radius', 'refx', 'refy', 'repeatcount', 'repeatdur', 'restart', 'result', 'rotate',
-            'scale', 'seed', 'shape-rendering', 'specularconstant', 'specularexponent', 'spreadmethod', 'stddeviation', 'stitchtiles', 'stop-color', 'stop-opacity', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-opacity', 'stroke', 'stroke-width', 'style', 'surfacescale',
-            'tabindex', 'targetx', 'targety', 'transform', 'text-anchor', 'text-decoration', 'text-rendering', 'textlength', 'type',
+            'marker-end', 'marker-mid', 'marker-start', 'markerheight', 'markerunits',
+            'markerwidth', 'mask', 'mask-type', 'maskcontentunits', 'maskunits', 'media',
+            'mode', 'name', 'numoctaves',
+            'offset', 'opacity', 'operator', 'order', 'orient', 'orientation', 'origin',
+            'overflow',
+            'paint-order', 'path', 'pathlength', 'patterncontentunits', 'patterntransform',
+            'patternunits', 'points', 'pointsatx', 'pointsaty', 'pointsatz',
+            'preservealpha', 'preserveaspectratio', 'primitiveunits',
+            'r', 'radius', 'refx', 'refy', 'repeatcount', 'repeatdur', 'restart', 'result',
+            'role', 'rotate', 'rx', 'ry',
+            'scale', 'seed', 'shape-rendering', 'specularconstant',
+            'specularexponent', 'spreadmethod', 'startoffset', 'stddeviation',
+            'stitchtiles', 'stop-color', 'stop-opacity', 'stroke', 'stroke-dasharray',
+            'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
+            'stroke-opacity', 'stroke-width', 'style', 'surfacescale',
+            'systemlanguage',
+            'tabindex', 'targetx', 'targety', 'text-anchor', 'text-decoration',
+            'text-rendering', 'textlength', 'transform', 'type',
             'u1', 'u2', 'unicode',
-            'values', 'viewbox', 'visibility', 'vert-adv-y', 'vert-origin-x', 'vert-origin-y',
+            'values', 'viewbox', 'visibility', 'version', 'vert-adv-y', 'vert-origin-x',
+            'vert-origin-y',
             'width', 'word-spacing', 'wrap', 'writing-mode',
-            'xchannelselector',
-            'ychannelselector',
-            'x', 'x1', 'x2',
-            'xmlns',
-            'y', 'y1', 'y2',
+            'x', 'x1', 'x2', 'xchannelselector',
+            'xml:id', 'xml:lang', 'xml:space',
+            'xlink:href', 'xlink:title',
+            'xmlns', 'xmlns:xlink',
+            'y', 'y1', 'y2', 'ychannelselector',
             'z', 'zoomandpan',
+        ]);
 
-            // MathML
-            'accent', 'accentunder', 'align',
-            'bevelled',
-            'close', 'columnsalign', 'columnlines', 'columnspan',
-            'denomalign', 'depth', 'dir', 'display', 'displaystyle',
-            'fence', 'frame',
-            'height', 'href',
-            'id',
-            'largeop', 'length', 'linethickness', 'lspace', 'lquote',
-            'mathbackground', 'mathcolor', 'mathsize', 'mathvariant', 'maxsize', 'minsize', 'movablelimits',
-            'notation', 'numalign',
-            'open',
-            'rowalign', 'rowlines', 'rowspacing', 'rowspan', 'rspace', 'rquote',
-            'scriptlevel', 'scriptminsize', 'scriptsizemultiplier', 'selection', 'separator', 'separators', 'slope', 'stretchy', 'subscriptshift', 'supscriptshift', 'symmetric',
-            'voffset',
-            'width',
-            'xmlns',
-
-            // XML
-            'xlink:href',
-            'xml:id',
-            'xlink:title',
-            'xml:space',
-            'xmlns:xlink',
-        ];
-
-        $this->allowedTags = [
-            // HTML
-            'a', 'abbr', 'acronym', 'address', 'area', 'article', 'aside', 'audio',
-            'b', 'bdi', 'bdo', 'big', 'blink', 'blockquote', 'body', 'br', 'button',
-            'canvas', 'caption', 'center', 'cite', 'code', 'col', 'colgroup', 'content',
-            'data', 'datalist', 'dd', 'decorator', 'del', 'details', 'dfn', 'dir', 'div', 'dl', 'dt',
-            'element', 'em',
-            'fieldset', 'figcaption', 'figure', 'font', 'footer', 'form',
-            'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html',
-            'i', 'image', 'img', 'input', 'ins',
-            'kbd',
-            'label', 'legend', 'li',
-            'main', 'map', 'mark', 'marquee', 'menu', 'menuitem', 'meter',
-            'nav', 'nobr',
-            'ol', 'optgroup', 'option', 'output',
-            'p', 'pre', 'progress',
-            'q',
-            'rp', 'rt', 'ruby',
-            's', 'samp', 'section', 'select', 'shadow', 'small', 'source', 'spacer', 'span', 'strike', 'strong', 'style', 'sub', 'summary', 'sup',
-            'table', 'tbody', 'td', 'template', 'textarea', 'tfoot', 'th', 'thead', 'time', 'tr', 'track', 'tt',
-            'u', 'ul',
-            'var', 'video',
-            'wbr',
-
-            // SVG
-            'svg',
-            'altglyph', 'altglyphdef', 'altglyphitem', 'animatecolor', 'animatemotion', 'animatetransform',
+        $this->allowedTags = $this->normalizeWhitelist([
+            'a', 'altglyph', 'altglyphdef', 'altglyphitem', 'animate', 'animatecolor',
+            'animatemotion', 'animatetransform',
             'circle', 'clippath',
             'defs', 'desc',
             'ellipse',
+            'feblend', 'fecolormatrix', 'fecomponenttransfer', 'fecomposite',
+            'feconvolvematrix', 'fediffuselighting', 'fedisplacementmap',
+            'fedistantlight', 'feflood', 'fefunca', 'fefuncb', 'fefuncg', 'fefuncr',
+            'fegaussianblur', 'feimage', 'femerge', 'femergenode', 'femorphology',
+            'feoffset', 'fepointlight', 'fespecularlighting', 'fespotlight', 'fetile',
+            'feturbulence',
             'filter', 'font',
             'g', 'glyph', 'glyphref',
             'hkern',
             'image',
-            'line',
-            'lineargradient',
+            'line', 'lineargradient',
             'marker', 'mask', 'metadata', 'mpath',
             'path', 'pattern', 'polygon', 'polyline',
             'radialgradient', 'rect',
-            'stop', 'switch', 'symbol',
+            'set', 'stop', 'style', 'switch', 'svg', 'symbol',
             'text', 'textpath', 'title', 'tref', 'tspan',
             'use',
             'view', 'vkern',
+        ]);
 
-            // SVG Filters
-            'feBlend',
-            'feColorMatrix',
-            'feComponentTransfer',
-            'feComposite',
-            'feConvolveMatrix',
-            'feDiffuseLighting',
-            'feDisplacementMap',
-            'feDistantLight',
-            'feFlood',
-            'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR',
-            'feGaussianBlur',
-            'feMerge',
-            'feMergeNode',
-            'feMorphology',
-            'feOffset',
-            'fePointLight',
-            'feSpecularLighting',
-            'feSpotLight',
-            'feTile',
-            'feTurbulence',
-
-            //MathML
-            'math',
-            'menclose',
-            'merror',
-            'mfenced',
-            'mfrac',
-            'mglyph',
-            'mi',
-            'mlabeledtr',
-            'mmuliscripts',
-            'mn',
-            'mo',
-            'mover',
-            'mpadded',
-            'mphantom',
-            'mroot',
-            'mrow',
-            'ms',
-            'mpspace',
-            'msqrt',
-            'mystyle',
-            'msub',
-            'msup',
-            'msubsup',
-            'mtable',
-            'mtd',
-            'mtext',
-            'mtr',
-            'munder',
-            'munderover',
-
-            //text
-            '#text'
-        ];
+        $this->allowedCssProperties = $this->normalizeWhitelist([
+            'clip-path', 'clip-rule', 'color', 'direction', 'display', 'fill',
+            'fill-opacity', 'fill-rule', 'filter', 'flood-color', 'flood-opacity',
+            'font-family', 'font-size', 'font-size-adjust', 'font-stretch', 'font-style',
+            'font-variant', 'font-weight', 'image-rendering', 'letter-spacing',
+            'marker-end', 'marker-mid', 'marker-start', 'mask', 'opacity', 'overflow',
+            'paint-order', 'shape-rendering', 'stop-color', 'stop-opacity', 'stroke',
+            'stroke-dasharray', 'stroke-dashoffset', 'stroke-linecap',
+            'stroke-linejoin', 'stroke-miterlimit', 'stroke-opacity', 'stroke-width',
+            'text-anchor', 'text-decoration', 'text-rendering', 'visibility',
+            'word-spacing', 'writing-mode',
+        ]);
     }
 
     /**
@@ -264,6 +198,9 @@ class SVGSanitizer
         $this->xmlDocument = new DOMDocument();
         $this->xmlDocument->preserveWhiteSpace = false;
         $this->xmlDocument->strictErrorChecking = false;
+        $this->xmlDocument->resolveExternals = false;
+        $this->xmlDocument->substituteEntities = false;
+        $this->xmlDocument->validateOnParse = false;
         $this->xmlDocument->formatOutput = !$this->minifyXML;
     }
 
@@ -306,7 +243,7 @@ class SVGSanitizer
      */
     public function setAllowedTags($allowedTags)
     {
-        $this->allowedTags = array_map('strtolower', $allowedTags);
+        $this->allowedTags = $this->normalizeWhitelist($allowedTags);
     }
 
     /**
@@ -326,7 +263,7 @@ class SVGSanitizer
      */
     public function setAllowedAttrs($allowedAttrs)
     {
-        $this->allowedAttrs = array_map('strtolower', $allowedAttrs);
+        $this->allowedAttrs = $this->normalizeWhitelist($allowedAttrs);
     }
 
     /**
@@ -336,56 +273,64 @@ class SVGSanitizer
      */
     public function removeRemoteReferences($removeRemoteRefs = false)
     {
-        $this->removeRemoteReferences = $removeRemoteRefs;
+        $this->removeRemoteReferences = (bool) $removeRemoteRefs;
     }
 
     /**
      * Sanitize the passed string
      *
      * @param string $dirty
-     * @return string
+     * @return string|false
      */
     public function sanitize($dirty)
     {
-        // Don't run on an empty string
-        if (empty($dirty)) {
+        if (!is_string($dirty) || trim($dirty) === '') {
             return '';
         }
 
-        // Strip php tags
-        $dirty = preg_replace('/<\?(=|php)(.+?)\?>/i', '', $dirty);
+        // Strip PHP tags before XML parsing.
+        $dirty = preg_replace('/<\?(=|php)(.+?)\?>/is', '', $dirty);
 
         $this->resetInternal();
         $this->setUpBefore();
 
-        $loaded = $this->xmlDocument->loadXML($dirty);
+        $loaded = $this->xmlDocument->loadXML($dirty, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_COMPACT);
 
-        // If we couldn't parse the XML then we go no further. Reset and return false
-        if (!$loaded) {
+        $this->tearDownAfter();
+
+        if (!$loaded || !$this->isSvgDocument()) {
             return false;
         }
 
-        $this->removeDoctype();
+        $this->stripUnsafeNodes($this->xmlDocument);
 
-        // Grab all the elements
-        $allElements = $this->xmlDocument->getElementsByTagName("*");
+        if (!$this->isSvgDocument()) {
+            return false;
+        }
 
-        // Start the cleaning proccess
+        $allElements = $this->xmlDocument->getElementsByTagName('*');
+
         $this->startClean($allElements);
 
-        // Save cleaned XML to a variable
+        if (!$this->isSvgDocument()) {
+            return false;
+        }
+
         if ($this->removeXMLTag) {
             $clean = $this->xmlDocument->saveXML($this->xmlDocument->documentElement, $this->xmlOptions);
         } else {
             $clean = $this->xmlDocument->saveXML($this->xmlDocument, $this->xmlOptions);
         }
 
-        // Remove any extra whitespaces when minifying
-        if ($this->minifyXML) {
-            $clean = preg_replace('/\s+/', ' ', $clean);
+        if (!is_string($clean) || $clean === '') {
+            return false;
         }
 
-        // Return result
+        if ($this->minifyXML) {
+            $clean = preg_replace('/>\s+</', '><', $clean);
+            $clean = trim((string) $clean);
+        }
+
         return $clean;
     }
 
@@ -395,185 +340,114 @@ class SVGSanitizer
     protected function setUpBefore()
     {
 
-        // Suppress the errors because we don't really have to worry about formation before cleansing
         libxml_use_internal_errors(true);
     }
 
     /**
-     * Remove the XML Doctype
-     * It may be caught later on output but that seems to be buggy, so we need to make sure it's gone
+     * Restore libXML state after parsing.
      */
-    protected function removeDoctype()
+    protected function tearDownAfter()
     {
-        foreach ($this->xmlDocument->childNodes as $child) {
-            if ($child->nodeType === XML_DOCUMENT_TYPE_NODE) {
-                $child->parentNode->removeChild($child);
-            }
-        }
+        libxml_clear_errors();
     }
 
     /**
-     * Start the cleaning with tags, then we move onto attributes and hrefs later
+     * Start the cleaning with tags, then move onto attributes and CSS values.
      *
      * @param \DOMNodeList $elements
      */
     protected function startClean(\DOMNodeList $elements)
     {
-        // loop through all elements
-        // we do this backwards so we don't skip anything if we delete a node
-        // see comments at: http://php.net/manual/en/class.domnamednodemap.php
         for ($i = $elements->length - 1; $i >= 0; $i--) {
             $currentElement = $elements->item($i);
 
-            // If the tag isn't in the whitelist, remove it and continue with next iteration
-            if (!in_array(strtolower($currentElement->tagName), $this->allowedTags)) {
-                $currentElement->parentNode->removeChild($currentElement);
+            if (!$currentElement instanceof \DOMElement) {
+                continue;
+            }
+
+            $tagName = $this->normalizeTagName($currentElement);
+
+            if (!in_array($tagName, $this->allowedTags, true)) {
+                $currentElement->parentNode?->removeChild($currentElement);
                 continue;
             }
 
             $this->cleanAttributesOnWhitelist($currentElement);
 
-            $this->cleanXlinkHrefs($currentElement);
+            if ($tagName === 'style' && !$this->sanitizeStyleElement($currentElement)) {
+                $currentElement->parentNode?->removeChild($currentElement);
+                continue;
+            }
 
-            $this->cleanHrefs($currentElement);
-
-            if (strtolower($currentElement->tagName) === 'use') {
-                if ($this->isUseTagDirty($currentElement)) {
-                    $currentElement->parentNode->removeChild($currentElement);
-                    continue;
-                }
+            if ($tagName === 'use' && $this->isUseTagDirty($currentElement)) {
+                $currentElement->parentNode?->removeChild($currentElement);
             }
         }
     }
 
     /**
-     * Only allow attributes that are on the whitelist
+     * Only allow attributes that are on the whitelist and sanitize their values.
      *
      * @param \DOMElement $element
      */
     protected function cleanAttributesOnWhitelist(\DOMElement $element)
     {
         for ($x = $element->attributes->length - 1; $x >= 0; $x--) {
-            // get attribute name
-            $attrName = $element->attributes->item($x)->name;
+            $attribute = $element->attributes->item($x);
 
-            // Remove attribute if not in whitelist
-            if (!in_array(strtolower($attrName), $this->allowedAttrs) && !$this->isAriaAttribute(strtolower($attrName)) && !$this->isDataAttribute(strtolower($attrName))) {
-                $element->removeAttribute($attrName);
+            if (!$attribute instanceof \DOMAttr) {
+                continue;
             }
 
-            // Do we want to strip remote references?
-            if($this->removeRemoteReferences) {
-                // Remove attribute if it has a remote reference
-                if (isset($element->attributes->item($x)->value) && $this->hasRemoteReference($element->attributes->item($x)->value)) {
-                    $element->removeAttribute($attrName);
-                }
+            $attrName = $this->normalizeAttributeName($attribute);
+
+            if (!$this->isAllowedAttribute($attrName)) {
+                $element->removeAttributeNode($attribute);
+                continue;
+            }
+
+            $cleanValue = $this->sanitizeAttributeValue($element, $attrName, $attribute->value);
+
+            if ($cleanValue === null || $cleanValue === '') {
+                $element->removeAttributeNode($attribute);
+                continue;
+            }
+
+            if ($cleanValue !== $attribute->value) {
+                $attribute->value = $cleanValue;
             }
         }
     }
 
     /**
-     * Clean the xlink:hrefs of script and data embeds
+     * Remove dangerous XML node types that are not represented in the element whitelist.
      *
-     * @param \DOMElement $element
+     * @param \DOMNode $node
      */
-    protected function cleanXlinkHrefs(\DOMElement $element)
+    protected function stripUnsafeNodes(\DOMNode $node)
     {
-        $xlinks = $element->getAttributeNodeNS('http://www.w3.org/1999/xlink', 'href');
-        $val = $xlinks ? $xlinks->value : null;
+        for ($i = $node->childNodes->length - 1; $i >= 0; $i--) {
+            $child = $node->childNodes->item($i);
 
-        if (!$val) {
-            $xlinks = $element->getAttributeNode('xlink:href');
-            $val = $xlinks ? $xlinks->value : null;
-        }
-
-        if ($val && !$this->isAllowedUri($val)) {
-             $element->removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
-             $element->removeAttribute('xlink:href');
-        }
-    }
-
-    /**
-     * Clean the hrefs of script and data embeds
-     *
-     * @param \DOMElement $element
-     */
-    protected function cleanHrefs(\DOMElement $element)
-    {
-        $hrefNode = $element->getAttributeNode('href');
-        $val = $hrefNode ? $hrefNode->value : null;
-        
-        if ($val && !$this->isAllowedUri($val)) {
-            $element->removeAttribute('href');
-        }
-    }
-
-    protected function isAllowedUri($uri)
-    {
-        $cleanedUri = $this->removeNonPrintableCharacters($uri);
-        
-        // Strict check: if the URI contained non-printables or required trimming, reject it.
-        if ($cleanedUri !== $uri) {
-            return false;
-        }
-
-        // If it looks like a script/data URI
-        if (preg_match(self::SCRIPT_REGEX, $cleanedUri) === 1) {
-            
-            $allowed = [
-                'data:image/avif', // AVIF
-                'data:image/png', // PNG
-                'data:image/gif', // GIF
-                'data:image/jpg', // JPG
-                'data:image/jpe', // JPEG
-                'data:image/pjp', // PJPEG
-                'data:image/webp', // WEBP
-            ];
-            
-            // Allow SVG data URIs if checking SVG content?
-            // Usually dangerous if it contains scripts. Stick to raster for now or be careful.
-            
-            foreach ($allowed as $prefix) {
-                if (str_starts_with(strtolower($cleanedUri), $prefix)) {
-                    return true;
-                }
+            if (!$child) {
+                continue;
             }
 
-            return false;
+            if (in_array($child->nodeType, [
+                XML_PI_NODE,
+                XML_COMMENT_NODE,
+                XML_DOCUMENT_TYPE_NODE,
+                XML_ENTITY_NODE,
+                XML_ENTITY_REF_NODE,
+            ], true)) {
+                $node->removeChild($child);
+                continue;
+            }
+
+            if ($child->hasChildNodes()) {
+                $this->stripUnsafeNodes($child);
+            }
         }
-
-        return true;
-    }
-
-    /**
-     * Removes non-printable ASCII characters from string & trims it
-     *
-     * @param string $value
-     * @return bool
-     */
-    protected function removeNonPrintableCharacters($value)
-    {
-        return trim(preg_replace('/[^\x20-\x7E]/u','',$value));
-    }
-
-    /**
-     * Does this attribute value have a remote reference?
-     *
-     * @param $value
-     * @return bool
-     */
-    protected function hasRemoteReference($value)
-    {
-        $value = $this->removeNonPrintableCharacters($value);
-
-        $wrapped_in_url = preg_match('~^url\(\s*[\'"]\s*(.*)\s*[\'"]\s*\)$~xi', $value, $match);
-        if (!$wrapped_in_url){
-            return false;
-        }
-
-        $value = trim($match[1], '\'"');
-
-        return preg_match('~^((https?|ftp|file):)?//~xi', $value);
     }
 
     /**
@@ -599,8 +473,7 @@ class SVGSanitizer
     /**
      * Check to see if an attribute is an aria attribute or not
      *
-     * @param $attributeName
-     *
+     * @param string $attributeName
      * @return bool
      */
     protected function isAriaAttribute($attributeName)
@@ -609,10 +482,9 @@ class SVGSanitizer
     }
 
     /**
-     * Check to see if an attribute is an data attribute or not
+     * Check to see if an attribute is a data attribute or not
      *
-     * @param $attributeName
-     *
+     * @param string $attributeName
      * @return bool
      */
     protected function isDataAttribute($attributeName)
@@ -621,30 +493,535 @@ class SVGSanitizer
     }
 
     /**
-     * Make sure our use tag is only referencing internal resources
+     * Make sure our use tag is only referencing internal resources.
      *
      * @param \DOMElement $element
      * @return bool
      */
     protected function isUseTagDirty(\DOMElement $element)
     {
-        $xlinks = $element->getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-        
-        if (empty($xlinks)) {
-            $xlinks = $element->getAttribute('xlink:href');
-        }
-        
-        if ($xlinks && !str_starts_with($xlinks, '#')) {
+        $xlink = $this->getNormalizedAttributeValue($element, 'xlink:href');
+        $href = $this->getNormalizedAttributeValue($element, 'href');
+
+        if ($xlink === null && $href === null) {
             return true;
         }
 
-        $href = $element->getAttribute('href');
-        if ($href && !str_starts_with($href, '#')) {
-            // Also check href for use tags? Standard SVG use supports href.
-            // If we want to be strict about internal resources:
+        if ($xlink !== null && !$this->isFragmentReference($this->normalizeUriForChecks($xlink))) {
             return true;
         }
 
-        return false;
+        return $href !== null && !$this->isFragmentReference($this->normalizeUriForChecks($href));
+    }
+
+    /**
+     * @param array $values
+     * @return array
+     */
+    protected function normalizeWhitelist(array $values)
+    {
+        return array_values(array_unique(array_map('strtolower', $values)));
+    }
+
+    /**
+     * @return bool
+     */
+    protected function isSvgDocument()
+    {
+        if (!$this->xmlDocument || !$this->xmlDocument->documentElement) {
+            return false;
+        }
+
+        return $this->normalizeTagName($this->xmlDocument->documentElement) === 'svg';
+    }
+
+    /**
+     * @param \DOMElement $element
+     * @return string
+     */
+    protected function normalizeTagName(\DOMElement $element)
+    {
+        return strtolower((string) ($element->localName ?: $element->tagName));
+    }
+
+    /**
+     * @param \DOMAttr $attribute
+     * @return string
+     */
+    protected function normalizeAttributeName(\DOMAttr $attribute)
+    {
+        $localName = strtolower((string) ($attribute->localName ?: $attribute->name));
+
+        if ($attribute->prefix) {
+            return strtolower($attribute->prefix).':'.$localName;
+        }
+
+        return strtolower($attribute->name);
+    }
+
+    /**
+     * @param string $attributeName
+     * @return bool
+     */
+    protected function isAllowedAttribute($attributeName)
+    {
+        return in_array($attributeName, $this->allowedAttrs, true)
+            || $this->isAriaAttribute($attributeName)
+            || $this->isDataAttribute($attributeName)
+            || $this->isNamespaceDeclarationAttribute($attributeName);
+    }
+
+    /**
+     * @param string $attributeName
+     * @return bool
+     */
+    protected function isNamespaceDeclarationAttribute($attributeName)
+    {
+        return $attributeName === 'xmlns' || strpos($attributeName, 'xmlns:') === 0;
+    }
+
+    /**
+     * @param \DOMElement $element
+     * @param string $attributeName
+     * @param string $value
+     * @return string|null
+     */
+    protected function sanitizeAttributeValue(\DOMElement $element, $attributeName, $value)
+    {
+        $value = trim($value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        if ($attributeName === 'style') {
+            $style = $this->sanitizeCssDeclarationList($value);
+            return $style !== '' ? $style : null;
+        }
+
+        if ($this->isHrefAttribute($attributeName)) {
+            return $this->sanitizeHrefValue($this->normalizeTagName($element), $value);
+        }
+
+        if ($this->isUrlBearingAttribute($attributeName)) {
+            return $this->sanitizeUrlFunctionValue($value);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param string $attributeName
+     * @return bool
+     */
+    protected function isHrefAttribute($attributeName)
+    {
+        return in_array($attributeName, ['href', 'xlink:href'], true);
+    }
+
+    /**
+     * @param string $attributeName
+     * @return bool
+     */
+    protected function isUrlBearingAttribute($attributeName)
+    {
+        return in_array($attributeName, [
+            'clip-path',
+            'cursor',
+            'fill',
+            'filter',
+            'marker-end',
+            'marker-mid',
+            'marker-start',
+            'mask',
+            'stroke',
+        ], true);
+    }
+
+    /**
+     * @param string $tagName
+     * @param string $value
+     * @return string|null
+     */
+    protected function sanitizeHrefValue($tagName, $value)
+    {
+        if ($tagName === 'a') {
+            return $this->sanitizeLinkHref($value);
+        }
+
+        if (in_array($tagName, ['image', 'feimage'], true)) {
+            return $this->sanitizeImageHref($value);
+        }
+
+        return $this->sanitizeInternalReference($value);
+    }
+
+    /**
+     * @param string $value
+     * @return string|null
+     */
+    protected function sanitizeLinkHref($value)
+    {
+        $normalized = $this->normalizeUriForChecks($value);
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        if ($this->isFragmentReference($normalized)) {
+            return trim($value);
+        }
+
+        if ($this->isAllowedDataImageUri($normalized)) {
+            return null;
+        }
+
+        $scheme = $this->extractUriScheme($normalized);
+
+        if ($scheme === null) {
+            return trim($value);
+        }
+
+        return in_array($scheme, self::SAFE_LINK_SCHEMES, true) ? trim($value) : null;
+    }
+
+    /**
+     * @param string $value
+     * @return string|null
+     */
+    protected function sanitizeImageHref($value)
+    {
+        $normalized = $this->normalizeUriForChecks($value);
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        if ($this->isFragmentReference($normalized) || $this->isAllowedDataImageUri($normalized)) {
+            return trim($value);
+        }
+
+        $scheme = $this->extractUriScheme($normalized);
+
+        if ($scheme !== null) {
+            if (!in_array($scheme, self::SAFE_IMAGE_SCHEMES, true)) {
+                return null;
+            }
+
+            if ($this->removeRemoteReferences && $this->isRemoteUri($normalized)) {
+                return null;
+            }
+        } elseif (strpos($normalized, '//') === 0 && $this->removeRemoteReferences) {
+            return null;
+        }
+
+        return trim($value);
+    }
+
+    /**
+     * @param string $value
+     * @return string|null
+     */
+    protected function sanitizeInternalReference($value)
+    {
+        $normalized = $this->normalizeUriForChecks($value);
+
+        return $this->isFragmentReference($normalized) ? trim($value) : null;
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    protected function normalizeUriForChecks($value)
+    {
+        $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = preg_replace('/[\x00-\x20\x7f]+/u', '', $value);
+
+        return strtolower((string) $value);
+    }
+
+    /**
+     * @param string $value
+     * @return string|null
+     */
+    protected function extractUriScheme($value)
+    {
+        if (preg_match('/^([a-z][a-z0-9+.-]*):/i', $value, $match) !== 1) {
+            return null;
+        }
+
+        return strtolower($match[1]);
+    }
+
+    /**
+     * @param string $value
+     * @return bool
+     */
+    protected function isRemoteUri($value)
+    {
+        if (strpos($value, '//') === 0) {
+            return true;
+        }
+
+        $scheme = $this->extractUriScheme($value);
+
+        return $scheme !== null && in_array($scheme, self::REMOTE_URI_SCHEMES, true);
+    }
+
+    /**
+     * @param string $value
+     * @return bool
+     */
+    protected function isFragmentReference($value)
+    {
+        return strpos($value, '#') === 0;
+    }
+
+    /**
+     * @param string $value
+     * @return bool
+     */
+    protected function isAllowedDataImageUri($value)
+    {
+        return preg_match(self::ALLOWED_DATA_IMAGE_REGEX, $value) === 1;
+    }
+
+    /**
+     * @param string $value
+     * @return string|null
+     */
+    protected function sanitizeUrlFunctionValue($value)
+    {
+        $value = trim($this->decodeCssEscapes($this->stripCssComments($value)));
+
+        if ($value === '' || $this->containsForbiddenCssToken($value)) {
+            return null;
+        }
+
+        if (stripos($value, 'url(') === false) {
+            return $value;
+        }
+
+        $invalid = false;
+
+        $sanitized = preg_replace_callback('/url\(\s*([\'"]?)(.*?)\1\s*\)/i', function($matches) use (&$invalid) {
+            $reference = trim($matches[2]);
+            $normalized = $this->normalizeUriForChecks($reference);
+
+            if (!$this->isFragmentReference($normalized)) {
+                $invalid = true;
+                return '';
+            }
+
+            return 'url('.$reference.')';
+        }, $value);
+
+        if ($invalid || !is_string($sanitized)) {
+            return null;
+        }
+
+        return trim($sanitized);
+    }
+
+    /**
+     * @param \DOMElement $element
+     * @return bool
+     */
+    protected function sanitizeStyleElement(\DOMElement $element)
+    {
+        $css = '';
+
+        foreach ($element->childNodes as $child) {
+            if (in_array($child->nodeType, [XML_TEXT_NODE, XML_CDATA_SECTION_NODE], true)) {
+                $css .= $child->nodeValue;
+                continue;
+            }
+
+            return false;
+        }
+
+        $css = $this->sanitizeCssStylesheet($css);
+
+        if ($css === '') {
+            return false;
+        }
+
+        while ($element->firstChild) {
+            $element->removeChild($element->firstChild);
+        }
+
+        $element->appendChild($element->ownerDocument->createTextNode($css));
+
+        return true;
+    }
+
+    /**
+     * @param string $css
+     * @return string
+     */
+    protected function sanitizeCssStylesheet($css)
+    {
+        $css = trim($this->decodeCssEscapes($this->stripCssComments($css)));
+
+        if ($css === '' || $this->containsForbiddenCssToken($css)) {
+            return '';
+        }
+
+        $rules = preg_split('/}(?![^()]*\))/', $css);
+        $cleanRules = [];
+
+        foreach ($rules as $rule) {
+            $rule = trim($rule);
+
+            if ($rule === '' || !str_contains($rule, '{')) {
+                continue;
+            }
+
+            [$selector, $declarations] = explode('{', $rule, 2);
+
+            $selector = trim($selector);
+
+            if ($selector === '' || strpos($selector, '@') !== false || !$this->isSafeCssSelector($selector)) {
+                continue;
+            }
+
+            $cleanDeclarations = $this->sanitizeCssDeclarationList($declarations);
+
+            if ($cleanDeclarations === '') {
+                continue;
+            }
+
+            $cleanRules[] = $selector.' { '.$cleanDeclarations.'; }';
+        }
+
+        return implode($this->minifyXML ? '' : "\n", $cleanRules);
+    }
+
+    /**
+     * @param string $style
+     * @return string
+     */
+    protected function sanitizeCssDeclarationList($style)
+    {
+        $style = trim($this->decodeCssEscapes($this->stripCssComments($style)));
+
+        if ($style === '' || $this->containsForbiddenCssToken($style)) {
+            return '';
+        }
+
+        $parts = preg_split('/;(?![^()]*\))/', $style);
+        $cleanDeclarations = [];
+
+        foreach ($parts as $part) {
+            $part = trim($part);
+
+            if ($part === '' || !str_contains($part, ':')) {
+                continue;
+            }
+
+            [$property, $value] = explode(':', $part, 2);
+
+            $property = strtolower(trim($property));
+
+            if (!in_array($property, $this->allowedCssProperties, true)) {
+                continue;
+            }
+
+            $cleanValue = $this->sanitizeCssValue($value);
+
+            if ($cleanValue === null || $cleanValue === '') {
+                continue;
+            }
+
+            $cleanDeclarations[] = $property.': '.$cleanValue;
+        }
+
+        return implode('; ', $cleanDeclarations);
+    }
+
+    /**
+     * @param string $value
+     * @return string|null
+     */
+    protected function sanitizeCssValue($value)
+    {
+        $value = trim($this->decodeCssEscapes($this->stripCssComments($value)));
+
+        if ($value === '' || $this->containsForbiddenCssToken($value)) {
+            return null;
+        }
+
+        if (stripos($value, 'url(') !== false) {
+            return $this->sanitizeUrlFunctionValue($value);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param string $css
+     * @return bool
+     */
+    protected function containsForbiddenCssToken($css)
+    {
+        return preg_match(self::FORBIDDEN_CSS_PATTERN, $css) === 1;
+    }
+
+    /**
+     * @param string $css
+     * @return string
+     */
+    protected function stripCssComments($css)
+    {
+        return preg_replace('!/\*.*?\*/!s', '', $css);
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    protected function decodeCssEscapes($value)
+    {
+        return preg_replace_callback('/\\\\([0-9a-f]{1,6}\s?|.)/i', function($matches) {
+            $escaped = $matches[1];
+
+            if (preg_match('/^[0-9a-f]{1,6}\s?$/i', $escaped) === 1) {
+                $codePoint = hexdec(trim($escaped));
+
+                if ($codePoint <= 0 || $codePoint > 0x10FFFF) {
+                    return '';
+                }
+
+                return html_entity_decode('&#'.$codePoint.';', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            }
+
+            return $escaped;
+        }, $value);
+    }
+
+    /**
+     * @param string $selector
+     * @return bool
+     */
+    protected function isSafeCssSelector($selector)
+    {
+        return preg_match('/^[\s.#,:>\-\+\*\[\]\(\)="\'a-zA-Z0-9_|~\^$]+$/', $selector) === 1;
+    }
+
+    /**
+     * @param \DOMElement $element
+     * @param string $attributeName
+     * @return string|null
+     */
+    protected function getNormalizedAttributeValue(\DOMElement $element, $attributeName)
+    {
+        foreach ($element->attributes as $attribute) {
+            if ($attribute instanceof \DOMAttr && $this->normalizeAttributeName($attribute) === $attributeName) {
+                return $attribute->value;
+            }
+        }
+
+        return null;
     }
 }

@@ -8,6 +8,7 @@
 - Add support for custom ACL permission expression (via ScriptLite)
 - Content: Add `meta.computed` ScriptLite support for save-time computed fields
 - Fix Bucket path traversal vulnerability
+- Enhance SVG file handling during uploads
 
 ## 2.13.5 (2026-03-09)
 

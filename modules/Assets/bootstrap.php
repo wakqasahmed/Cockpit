@@ -118,12 +118,14 @@ $this->module('assets')->extend([
 
                 if (!$files['error'][$i] && $_isAllowed && $_sizeAllowed && ($isUpload ? move_uploaded_file($files['tmp_name'][$i], $_file) : rename($files['tmp_name'][$i], $_file))) {
 
+                    if (\preg_match('/\.svg$/i', $_file) && !\SVGSanitizer::sanitizeFile($_file)) {
+                        @unlink($_file);
+                        $failed[] = $files['name'][$i];
+                        continue;
+                    }
+
                     $_files[]   = $_file;
                     $uploaded[] = $files['name'][$i];
-
-                    if (\preg_match('/\.(svg|xml)$/i', $_file)) {
-                        file_put_contents($_file, \SVGSanitizer::clean(\file_get_contents($_file)));
-                    }
 
                 } else {
                     $failed[] = $files['name'][$i];

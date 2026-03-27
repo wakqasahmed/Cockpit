@@ -151,12 +151,16 @@ class Finder extends App {
                 $_file = $targetpath.'/'.$clean;
 
                 if (!$files['error'][$i] && $this->_isFileTypeAllowed($clean) && \move_uploaded_file($files['tmp_name'][$i], $_file)) {
+
+                    if (\preg_match('/\.svg$/i', $clean) && !\SVGSanitizer::sanitizeFile($_file)) {
+                        @unlink($_file);
+                        $failed[]  = ['file' => $files['name'][$i], 'error' => 'SVG sanitization failed'];
+                        $_failed[] = $_file;
+                        continue;
+                    }
+
                     $uploaded[]  = $files['name'][$i];
                     $_uploaded[] = $_file;
-
-                    if (\preg_match('/\.(svg|xml)$/i', $clean)) {
-                        \file_put_contents($_file, \SVGSanitizer::clean(\file_get_contents($_file)));
-                    }
 
                 } else {
                     $failed[]  = ['file' => $files['name'][$i], 'error' => $files['error'][$i]];
