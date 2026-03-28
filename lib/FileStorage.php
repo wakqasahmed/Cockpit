@@ -24,6 +24,8 @@ class FileStorage {
             $config['url'] = rtrim($config['url'], '/');
         }
 
+        $config['args'] = $config['args'] ?? [];
+
         $this->config[$name] = $config;
 
         if (isset($config['mount']) && $config['mount']) {
@@ -46,13 +48,23 @@ class FileStorage {
 
         $url = null;
 
-        list($prefix, $path) = explode('://', $file, 2);
+        if (!str_contains($file, '://')) {
+            return null;
+        }
+
+        [$prefix, $path] = explode('://', $file, 2);
+        $path = ltrim($path, '/');
 
         if (isset($this->config[$prefix]['url'])) {
 
             if (!$path) {
                 $url = $this->config[$prefix]['url'];
-            } elseif (!$checkExist || ($checkExist && $this->manager->fileExists($file))) {
+            } elseif (
+                !$checkExist || (
+                    ($storage = $this->use($prefix)) &&
+                    ($storage->fileExists($path) || $storage->directoryExists($path))
+                )
+            ) {
                 $url = $this->config[$prefix]['url'].'/'.ltrim($path, '/');
             }
         }
@@ -71,7 +83,7 @@ class FileStorage {
         $config = $this->config[$name];
         $adapter = new \ReflectionClass($config['adapter']);
         $this->storages[$name] = new Filesystem(
-            $adapter->newInstanceArgs($config['args'] ?: []),
+            $adapter->newInstanceArgs($config['args'] ?? []),
             ['visibility' => $config['visibility'] ?? 'public']
         );
 
