@@ -211,17 +211,23 @@ class Client {
     private function buildConditionalClause(array $conditions, array &$params, string $placeholderPrefix = '', string $defaultOperator = 'AND'): string {
         $clauses = [];
 
-        if (isset($conditions['AND']) || isset($conditions['OR'])) {
-            $operator = isset($conditions['AND']) ? 'AND' : 'OR';
-            $subConditions = $conditions[$operator];
-            return $this->buildConditionalClause($subConditions, $params, $placeholderPrefix, $operator);
+        if (\count($conditions) === 1) {
+            $operator = \array_key_first($conditions);
+
+            if (\is_string($operator) && \in_array(\strtoupper($operator), ['AND', 'OR'], true)) {
+                $operator = \strtoupper($operator);
+                $subConditions = $conditions[\array_key_first($conditions)];
+
+                return $this->buildConditionalClause($subConditions, $params, $placeholderPrefix, $operator);
+            }
         }
 
         foreach ($conditions as $key => $value) {
             if (\is_string($key) && \in_array(\strtoupper($key), ['AND', 'OR'])) {
+                $groupOperator = \strtoupper($key);
                 $clauses[] = [
-                    'operator' => \strtoupper($key),
-                    'clause' => '(' . $this->buildConditionalClause($value, $params, $placeholderPrefix) . ')'
+                    'operator' => $defaultOperator,
+                    'clause' => '(' . $this->buildConditionalClause($value, $params, $placeholderPrefix, $groupOperator) . ')'
                 ];
                 continue;
             }
@@ -353,6 +359,7 @@ class Client {
             }
             $result .= $item['clause'];
         }
+
         return $result;
     }
 
@@ -366,6 +373,29 @@ class Client {
             throw new \InvalidArgumentException("Unsupported JOIN operator: {$op}");
         }
         return $op;
+    }
+
+    /**
+     * Sanitize JOIN type to prevent injection.
+     */
+    private function sanitizeJoinType(string $type): string {
+        $type = \preg_replace('/\s+/', ' ', \strtoupper(\trim($type)));
+
+        $allowed = [
+            'INNER',
+            'LEFT',
+            'LEFT OUTER',
+            'RIGHT',
+            'RIGHT OUTER',
+            'FULL',
+            'FULL OUTER',
+        ];
+
+        if (!\in_array($type, $allowed, true)) {
+            throw new \InvalidArgumentException("Unsupported JOIN type: {$type}");
+        }
+
+        return $type;
     }
 
     private function buildOnClause(array $conditions): string {
@@ -401,7 +431,7 @@ class Client {
         // Add JOINs if present
         if (!empty($joins)) {
             foreach ($joins as $join) {
-                $joinType = \strtoupper(\trim($join['type'] ?? 'INNER'));
+                $joinType = $this->sanitizeJoinType($join['type'] ?? 'INNER');
                 $joinTable = $this->quoteIdentifier($join['table']);
                 $onCondition = \is_array($join['on']) ? $this->buildOnClause($join['on']) : $join['on'];
                 $sql .= " {$joinType} JOIN {$joinTable} ON {$onCondition}";
@@ -425,7 +455,7 @@ class Client {
 
         if (!empty($joins)) {
             foreach ($joins as $join) {
-                $joinType = \strtoupper(\trim($join['type'] ?? 'INNER'));
+                $joinType = $this->sanitizeJoinType($join['type'] ?? 'INNER');
                 $joinTable = $this->quoteIdentifier($join['table']);
                 $onCondition = \is_array($join['on']) ? $this->buildOnClause($join['on']) : $join['on'];
                 $sql .= " {$joinType} JOIN {$joinTable} ON {$onCondition}";
@@ -973,10 +1003,22 @@ class Client {
         $this->beginTransaction();
         try {
             $res = $fn($this);
-            $this->commit();
+
+            if ($this->inTransaction()) {
+                $this->commit();
+            }
+
             return $res;
         } catch (\Throwable $e) {
-            $this->rollBack();
+
+            if ($this->inTransaction()) {
+                try {
+                    $this->rollBack();
+                } catch (\Throwable) {
+                    // Preserve the original exception from the callback or commit.
+                }
+            }
+
             throw $e;
         }
     }
