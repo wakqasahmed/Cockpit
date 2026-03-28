@@ -45,6 +45,11 @@ class Database {
     protected ?Aggregation\Optimizer $aggregationOptimizer = null;
 
     /**
+     * @var array<string, array<string, bool>>
+     */
+    protected array $sortOptimizationCache = [];
+
+    /**
      * Constructor
      *
      * @param string $path
@@ -210,6 +215,7 @@ class Database {
         }
         
         $this->connection->exec("CREATE TABLE IF NOT EXISTS `{$sanitizedName}` ( id INTEGER PRIMARY KEY AUTOINCREMENT, document TEXT )");
+        unset($this->sortOptimizationCache[$sanitizedName]);
     }
 
     /**
@@ -228,6 +234,7 @@ class Database {
 
         // Remove collection from cache
         unset($this->collections[$name]);
+        unset($this->sortOptimizationCache[$sanitizedName]);
     }
 
     /**
@@ -345,6 +352,104 @@ class Database {
             );
         }
         return $this->aggregationOptimizer;
+    }
+
+    /**
+     * Determine whether sorting a field via json_extract() is safe to use
+     * without changing the legacy document_key() order semantics.
+     *
+     * Safe cases are intentionally narrow:
+     * - the field exists on every document
+     * - the field is never JSON null
+     * - the field values belong to exactly one scalar family:
+     *   text, number (integer/real), or bool (true/false)
+     */
+    public function canUseOptimizedSort(string $collectionName, string $field): bool {
+
+        if (!\preg_match('/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/', $field)) {
+            return false;
+        }
+
+        $sanitizedCollection = $this->sanitizeCollectionName($collectionName);
+
+        if (!$sanitizedCollection) {
+            return false;
+        }
+
+        if (isset($this->sortOptimizationCache[$sanitizedCollection][$field])) {
+            return $this->sortOptimizationCache[$sanitizedCollection][$field];
+        }
+
+        if (!$this->collectionTableExists($sanitizedCollection)) {
+            $this->sortOptimizationCache[$sanitizedCollection][$field] = false;
+            return false;
+        }
+
+        $path = $this->connection->quote('$.'.$field);
+        $sql = <<<SQL
+SELECT
+    COALESCE(SUM(CASE WHEN jt IS NULL OR jt = 'null' THEN 1 ELSE 0 END), 0) AS nullish_count,
+    COALESCE(COUNT(DISTINCT CASE
+        WHEN jt IN ('integer', 'real') THEN 'number'
+        WHEN jt IN ('true', 'false') THEN 'bool'
+        ELSE jt
+    END), 0) AS family_count,
+    COALESCE(MAX(CASE
+        WHEN jt IN ('integer', 'real', 'text', 'true', 'false') THEN 0
+        ELSE 1
+    END), 0) AS has_non_scalar
+FROM (
+    SELECT json_type(document, {$path}) AS jt
+    FROM `{$sanitizedCollection}`
+) sort_probe
+SQL;
+
+        try {
+            $stats = $this->connection->query($sql)?->fetch(\PDO::FETCH_ASSOC) ?: [];
+        } catch (\PDOException) {
+            $this->sortOptimizationCache[$sanitizedCollection][$field] = false;
+            return false;
+        }
+
+        $safe = (int)($stats['nullish_count'] ?? 0) === 0
+            && (int)($stats['family_count'] ?? 0) === 1
+            && (int)($stats['has_non_scalar'] ?? 0) === 0;
+
+        $this->sortOptimizationCache[$sanitizedCollection][$field] = $safe;
+
+        return $safe;
+    }
+
+    /**
+     * Invalidate cached sort-safety decisions for a collection or the whole DB.
+     */
+    public function invalidateSortOptimizationCache(?string $collectionName = null): void {
+
+        if ($collectionName === null) {
+            $this->sortOptimizationCache = [];
+            return;
+        }
+
+        $sanitizedCollection = $this->sanitizeCollectionName($collectionName);
+
+        if ($sanitizedCollection) {
+            unset($this->sortOptimizationCache[$sanitizedCollection]);
+        }
+    }
+
+    protected function collectionTableExists(string $sanitizedCollection): bool {
+
+        $stmt = $this->connection->prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :name LIMIT 1"
+        );
+
+        if (!$stmt) {
+            return false;
+        }
+
+        $stmt->execute([':name' => $sanitizedCollection]);
+
+        return (bool)$stmt->fetchColumn();
     }
 }
 

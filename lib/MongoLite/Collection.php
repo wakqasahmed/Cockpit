@@ -63,6 +63,8 @@ class Collection {
      */
     public function insert(array &$document): mixed {
 
+        $result = null;
+
         if (isset($document[0])) {
 
             $this->database->connection->beginTransaction();
@@ -79,10 +81,16 @@ class Collection {
                 }
             }
             $this->database->connection->commit();
-            return \count($document);
+            $result = \count($document);
         } else {
-            return $this->_insert($document);
+            $result = $this->_insert($document);
         }
+
+        if ($result) {
+            $this->database->invalidateSortOptimizationCache($this->name);
+        }
+
+        return $result;
     }
     /**
      * Insert document
@@ -204,6 +212,10 @@ class Collection {
                 $conn->rollBack();
                 throw $e;
             }
+        }
+
+        if (\count($result) > 0) {
+            $this->database->invalidateSortOptimizationCache($this->name);
         }
 
         return \count($result);
@@ -395,6 +407,10 @@ class Collection {
         $result = $this->database->connection->exec($sql);
 
         $this->database->unregisterCriteriaFunction($criteriaFnId);
+
+        if ($result) {
+            $this->database->invalidateSortOptimizationCache($this->name);
+        }
 
         return $result;
     }
@@ -621,7 +637,9 @@ class Collection {
             }
             
             $this->database->connection->exec("ALTER TABLE `{$sanitizedOldName}` RENAME TO `{$sanitizedNewName}`");
+            $this->database->invalidateSortOptimizationCache($this->name);
             $this->name = $newname;
+            $this->database->invalidateSortOptimizationCache($this->name);
 
             return true;
         }

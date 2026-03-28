@@ -220,7 +220,7 @@ class Cursor implements Iterator {
             $orders = [];
 
             foreach ($this->sort as $field => $direction) {
-                $orders[] = 'document_key('.$conn->quote($field).', document) '.($direction==-1 ? 'DESC':'ASC');
+                $orders[] = $this->buildSortExpression($conn, (string)$field).' '.($direction == -1 ? 'DESC' : 'ASC');
             }
 
             $sql[] = 'ORDER BY '. \implode(',', $orders);
@@ -297,6 +297,43 @@ class Cursor implements Iterator {
         }
         
         return $sanitized;
+    }
+
+    /**
+     * Build the ORDER BY expression for a sort field.
+     *
+     * Prefer SQLite's native JSON extraction for common field names so sorting
+     * stays inside SQLite instead of calling back into PHP per row. Fallback to
+     * the legacy document_key() function for anything that might change behavior.
+     */
+    protected function buildSortExpression(PDO $conn, string $field): string {
+
+        $path = $this->toOptimizedJsonPath($field);
+
+        if (
+            $path !== null
+            && $this->collection->database->canUseOptimizedSort($this->collection->name, $field)
+        ) {
+            return "json_extract(document, '{$path}')";
+        }
+
+        return 'document_key('.$conn->quote($field).', document)';
+    }
+
+    /**
+     * Convert a safe dot-notation field into a SQLite JSON path.
+     *
+     * Keep the optimization intentionally narrow. Fields with special
+     * characters continue to use document_key() so sorting semantics do not
+     * change unexpectedly.
+     */
+    protected function toOptimizedJsonPath(string $field): ?string {
+
+        if (!\preg_match('/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/', $field)) {
+            return null;
+        }
+
+        return '$.'.$field;
     }
 
 }
