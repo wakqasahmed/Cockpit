@@ -59,17 +59,23 @@ class Worker {
                 // Mark the message as completed if the callback returned true
                 if ($result === true) {
 
-                    $this->queue->complete($message['_id'], $context);
+                    $this->queue->complete($message['_id'], [
+                        '__reservation_token' => $message['reservation_token'] ?? null,
+                    ] + $context);
                 } else {
                     // Otherwise mark it as failed
-                    $this->queue->fail($message['_id'], $context);
+                    $this->queue->fail($message['_id'], [
+                        '__reservation_token' => $message['reservation_token'] ?? null,
+                    ] + $context);
                 }
 
                 $this->processedCount++;
 
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 // If an exception was thrown, mark the message as failed
-                $this->queue->fail($message['_id']);
+                $this->queue->fail($message['_id'], [
+                    '__reservation_token' => $message['reservation_token'] ?? null,
+                ]);
             }
         }
 

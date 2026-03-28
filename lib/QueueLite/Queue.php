@@ -14,6 +14,8 @@ class Queue {
     protected int $lockTimeout = 300;
     protected string $collectionName = 'queuelite/queue';
 
+    protected string $reservationTokenKey = '__reservation_token';
+
     public function __construct(MongoHybridClient $storage, string $queueName, array $options = []) {
 
         $this->storage = $storage;
@@ -106,6 +108,62 @@ class Queue {
         return $message;
     }
 
+    protected function createReservationToken(): string {
+
+        try {
+            return \bin2hex(\random_bytes(16));
+        } catch (\Throwable) {
+            return \uniqid('ql.', true);
+        }
+    }
+
+    protected function updateMatchedAny(mixed $result): bool {
+
+        if (\is_int($result)) {
+            return $result > 0;
+        }
+
+        if (\is_object($result)) {
+
+            if (\method_exists($result, 'getMatchedCount')) {
+                return $result->getMatchedCount() > 0;
+            }
+
+            if (\method_exists($result, 'getModifiedCount')) {
+                return $result->getModifiedCount() > 0;
+            }
+        }
+
+        return (bool) $result;
+    }
+
+    protected function reservationFilter(string $messageId, ?string $reservationToken = null): array {
+
+        $filter = [
+            '_id' => $messageId,
+            'queue' => $this->queueName,
+            'status' => 'reserved'
+        ];
+
+        if ($reservationToken !== null) {
+            $filter['reservation_token'] = $reservationToken;
+        }
+
+        return $filter;
+    }
+
+    protected function consumeReservationToken(array &$data): ?string {
+
+        $token = null;
+
+        if (\array_key_exists($this->reservationTokenKey, $data)) {
+            $token = \is_string($data[$this->reservationTokenKey]) ? $data[$this->reservationTokenKey] : null;
+            unset($data[$this->reservationTokenKey]);
+        }
+
+        return $token;
+    }
+
     protected function scheduleNextRepeatableMessage(array $message): void {
 
         if (!isset($message['repeat'])) {
@@ -181,32 +239,62 @@ class Queue {
 
     public function reserve(): ?array {
 
-        $message = $this->storage->find($this->collectionName, [
-            'limit' => 1,
-            'sort' => ['priority' => -1, 'available_at' => 1],
-            'filter' => [
-                'queue' => $this->queueName,
-                'status' => 'pending',
-                'available_at' => ['$lte' => \time()],
-            ]
-        ])[0] ?? null;
+        for ($retry = 0; $retry < 5; $retry++) {
 
-        if (!$message) {
-            return null;
+            $timestamp = \time();
+
+            $candidates = $this->storage->find($this->collectionName, [
+                'limit' => 10,
+                'sort' => ['priority' => -1, 'available_at' => 1],
+                'filter' => [
+                    'queue' => $this->queueName,
+                    'status' => 'pending',
+                    'available_at' => ['$lte' => $timestamp],
+                ]
+            ])->toArray();
+
+            if (!$candidates) {
+                return null;
+            }
+
+            foreach ($candidates as $message) {
+
+                $reservationToken = $this->createReservationToken();
+                $attempts = ($message['attempts'] ?? 0) + 1;
+
+                $updated = $this->storage->update($this->collectionName, [
+                    '_id' => $message['_id'],
+                    'queue' => $this->queueName,
+                    'status' => 'pending',
+                    'attempts' => $message['attempts'] ?? 0,
+                    'available_at' => ['$lte' => $timestamp],
+                ], [
+                    'attempts' => $attempts,
+                    'status' => 'reserved',
+                    'reserved_at' => $timestamp,
+                    'reservation_token' => $reservationToken,
+                ]);
+
+                if (!$this->updateMatchedAny($updated)) {
+                    continue;
+                }
+
+                return $this->storage->findOne($this->collectionName, [
+                    '_id' => $message['_id'],
+                    'queue' => $this->queueName,
+                    'status' => 'reserved',
+                    'reservation_token' => $reservationToken,
+                ]);
+            }
         }
 
-        $message['attempts'] = ($message['attempts'] ?? 0) + 1;
-        $message['status'] = 'reserved';
-        $message['reserved_at'] = \time();
-
-        $this->storage->save($this->collectionName, $message);
-
-        return $message;
+        return null;
     }
 
     public function complete(string $messageId, array $data = []): bool {
 
-        $message = $this->storage->findOne($this->collectionName, ['_id' => $messageId, 'status' => 'reserved']);
+        $reservationToken = $this->consumeReservationToken($data);
+        $message = $this->storage->findOne($this->collectionName, $this->reservationFilter($messageId, $reservationToken));
 
         if (!$message) {
             return false;
@@ -216,6 +304,8 @@ class Queue {
 
         $message['status'] = 'completed';
         $message['completed_at'] = \time();
+        $message['reserved_at'] = null;
+        $message['reservation_token'] = null;
 
         $this->storage->save($this->collectionName, $message);
 
@@ -228,7 +318,8 @@ class Queue {
 
     public function fail(string $messageId, array $data = []): bool {
 
-        $message = $this->storage->findOne($this->collectionName, ['_id' => $messageId, 'status' => 'reserved']);
+        $reservationToken = $this->consumeReservationToken($data);
+        $message = $this->storage->findOne($this->collectionName, $this->reservationFilter($messageId, $reservationToken));
 
         if (!$message) {
             return false;
@@ -236,8 +327,10 @@ class Queue {
 
         $message = \array_merge($message, $data);
 
-        $message['status'] = (($message['attempts'] + 1) > $message['max_attempts']) ? 'failed' : 'pending';
+        $message['status'] = (($message['attempts'] ?? 0) >= ($message['max_attempts'] ?? 1)) ? 'failed' : 'pending';
         $message['reserved_at'] = null;
+        $message['reservation_token'] = null;
+        $message['failed_at'] = $message['status'] === 'failed' ? \time() : null;
 
         $this->storage->save($this->collectionName, $message);
 
@@ -265,6 +358,7 @@ class Queue {
         ], [
             'status' => 'pending',
             'reserved_at' => null,
+            'reservation_token' => null,
         ]);
     }
 
@@ -335,6 +429,22 @@ class Queue {
 
         $timestamp = \time();
         $cutoff = $timestamp - \abs($olderThan);
+        $timestampField = match ($status) {
+            'completed' => 'completed_at',
+            'failed' => 'failed_at',
+            default => 'created_at',
+        };
+
+        if ($timestampField === 'created_at') {
+
+            $this->storage->remove($this->collectionName, [
+                'queue' => $this->queueName,
+                'status' => $status,
+                'created_at' => ['$lte' => $cutoff]
+            ]);
+
+            return;
+        }
 
         $filter = [
             'queue' => $this->queueName,
@@ -342,7 +452,18 @@ class Queue {
             'created_at' => ['$lte' => $cutoff]
         ];
 
-        $this->storage->remove($this->collectionName, $filter);
+        $ids = [];
+
+        foreach ($this->storage->find($this->collectionName, ['filter' => $filter])->toArray() as $message) {
+
+            if (($message[$timestampField] ?? null) === null || $message[$timestampField] <= $cutoff) {
+                $ids[] = $message['_id'];
+            }
+        }
+
+        if ($ids) {
+            $this->delete($ids);
+        }
     }
 
     public function purge(): void {
