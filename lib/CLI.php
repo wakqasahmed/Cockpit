@@ -14,22 +14,42 @@ class CLI {
 
             global $argv;
 
-            $args = $argv;
+            $args = is_array($argv ?? null) ? $argv : [];
             array_shift($args);
             $opts = [];
             $cnt = count($args);
 
-            for ($i=0;$i<$cnt;$i++){
+            for ($i=0;$i<$cnt;$i++) {
 
                 $a = $args[$i];
-                $b = isset($args[$i+1]) ? $args[$i+1] : null;
+
+                if (!is_string($a) || $a === '' || substr($a, 0, 1) !== '-') {
+                    continue;
+                }
+
+                if (str_contains($a, '=')) {
+                    [$flag, $value] = explode('=', $a, 2);
+
+                    if (substr($flag, 0, 2) == '--') {
+                        $opts[substr($flag, 2)] = $value;
+                        continue;
+                    }
+
+                    if (substr($flag, 0, 1) == '-') {
+                        $opts[substr($flag, 1)] = $value;
+                        continue;
+                    }
+                }
+
+                $b = $args[$i + 1] ?? null;
 
                 if (substr($a, 0, 2) == '--') {
 
                     $k = substr($a, 2);
 
-                    if ($b && substr($b, 0, 1) !== '-') {
+                    if (self::isOptionValue($b)) {
                         $opts[$k] = $b;
+                        $i++;
                     } else {
                         $opts[$k] = true;
                     }
@@ -38,8 +58,9 @@ class CLI {
 
                     $k = substr($a, 1);
 
-                    if ($b && substr($b, 0, 1) !== '-') {
+                    if (self::isOptionValue($b)) {
                         $opts[$k] = $b;
+                        $i++;
                     } else {
                         $opts[$k] = true;
                     }
@@ -55,7 +76,39 @@ class CLI {
     }
 
 
-    public static function write(string $out, ?string $fgcolor = null, ?string $bgcolor = null): void {
+    protected static function isOptionValue(mixed $value): bool {
+
+        if (!is_string($value) || $value === '') {
+            return false;
+        }
+
+        return substr($value, 0, 1) !== '-' || is_numeric($value);
+    }
+
+    protected static function terminalWidth(): int {
+
+        $width = (int) ($_SERVER['COLUMNS'] ?? getenv('COLUMNS') ?: 0);
+
+        if ($width > 0) {
+            return $width;
+        }
+
+        $term = (string) ($_SERVER['TERM'] ?? getenv('TERM') ?: '');
+
+        if ($term && function_exists('shell_exec')) {
+
+            $width = trim((string) @shell_exec('tput cols 2>/dev/null'));
+
+            if (ctype_digit($width)) {
+                return (int) $width;
+            }
+        }
+
+        return 80;
+    }
+
+
+    public static function write(string $out, string|bool|null $fgcolor = null, ?string $bgcolor = null): void {
 
         if ($fgcolor === true) $fgcolor = 'green';
         if ($fgcolor === false) $fgcolor = 'red';
@@ -102,7 +155,7 @@ class CLI {
         echo "{$out}";
     }
 
-    public static function writeln(string $out, ?string $fgcolor = null, ?string $bgcolor = null): void {
+    public static function writeln(string $out, string|bool|null $fgcolor = null, ?string $bgcolor = null): void {
         self::write("{$out}\n", $fgcolor, $bgcolor);
     }
 
@@ -118,9 +171,9 @@ class CLI {
         $str = str_pad(number_format($percent, $dec) . '%', $len, " ", STR_PAD_LEFT);
         $len += 3; // add 2 for () and a space before bar starts.
 
-        $width = `tput cols`;
-        $barWidth = $width - ($len) - 2; // subtract 2 for [] around bar
-        $numBars = round(($percent) / 100 * ($barWidth));
+        $width = self::terminalWidth();
+        $barWidth = max(0, $width - $len - 2); // subtract 2 for [] around bar
+        $numBars = (int) max(0, min($barWidth, round(($percent) / 100 * ($barWidth))));
         $numEmptyBars = $barWidth - $numBars;
 
         $barsString = '[' . str_repeat("=", ($numBars)) . str_repeat(" ", ($numEmptyBars)) . ']';
