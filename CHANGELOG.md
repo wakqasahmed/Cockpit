@@ -12,6 +12,8 @@
 - Improve Thumbhash class with enhanced validation and error handling
 - MongoLite: Optimize sorting performance
 - Content: Validate and enforce ACL permissions on `$lookup` stages in aggregate pipeline
+- Harden session cookie handling: enforce `HttpOnly`, auto-detect `Secure`, validate `SameSite`, and support configurable cookie params via `session.cookie`
+- Sanitize display values in `field-select` and `field-tags` components to prevent XSS
 
 ## 2.13.5 (2026-03-09)
 
