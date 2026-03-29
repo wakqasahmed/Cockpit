@@ -10,6 +10,7 @@ class Session extends \Lime\Helper {
     protected bool $initialized = false;
     public string $name = '';
     protected array $session = [];
+    protected static ?array $defaultCookieParams = null;
 
     public function init(?string $name = null): void {
 
@@ -19,6 +20,8 @@ class Session extends \Lime\Helper {
 
             $this->name = $name ?: $this->app->retrieve('session.name');
 
+            $this->configureCookieParams();
+            
             \session_name($this->name);
             \session_start();
         } else {
@@ -32,6 +35,68 @@ class Session extends \Lime\Helper {
         } else {
             $this->session = [];
         }
+    }
+
+    protected function configureCookieParams(): void {
+
+        @\ini_set('session.use_only_cookies', '1');
+        @\ini_set('session.use_strict_mode', '1');
+
+        if (self::$defaultCookieParams === null) {
+            self::$defaultCookieParams = \session_get_cookie_params();
+        }
+
+        $cookieConfig = $this->app->retrieve('session.cookie', []);
+
+        if (!\is_array($cookieConfig)) {
+            $cookieConfig = [];
+        }
+
+        $params = \array_merge([
+            'lifetime' => self::$defaultCookieParams['lifetime'] ?? 0,
+            'path' => self::$defaultCookieParams['path'] ?? '/',
+            'domain' => self::$defaultCookieParams['domain'] ?? '',
+            'secure' => $this->isSecureRequest(),
+            'httponly' => true,
+            'samesite' => self::$defaultCookieParams['samesite'] ?? 'Lax',
+        ], $cookieConfig);
+
+        $params['lifetime'] = \is_numeric($params['lifetime']) ? \intval($params['lifetime']) : 0;
+        $params['path'] = \is_string($params['path']) && $params['path'] ? $params['path'] : '/';
+        $params['domain'] = \is_string($params['domain']) ? $params['domain'] : '';
+        $params['secure'] = (bool) $params['secure'];
+        $params['httponly'] = (bool) $params['httponly'];
+
+        $sameSite = \ucfirst(\strtolower((string) ($params['samesite'] ?? 'Lax')));
+        $params['samesite'] = \in_array($sameSite, ['Lax', 'Strict', 'None'], true) ? $sameSite : 'Lax';
+
+        // Modern browsers require Secure when SameSite=None is used.
+        if ($params['samesite'] === 'None') {
+            $params['secure'] = true;
+        }
+
+        \session_set_cookie_params($params);
+    }
+
+    protected function isSecureRequest(): bool {
+
+        $requestIsSecure = $this->app->request instanceof Request && $this->app->request->is('ssl');
+
+        if ($requestIsSecure || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')) {
+            return true;
+        }
+
+        if (isset($_SERVER['SERVER_PORT']) && (string) $_SERVER['SERVER_PORT'] === '443') {
+            return true;
+        }
+
+        $forwardedProto = \strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ($_SERVER['HTTP_X_FORWARDED_PROTOCOL'] ?? ''));
+
+        if (\in_array($forwardedProto, ['https', 'ssl'], true)) {
+            return true;
+        }
+
+        return \strtolower($_SERVER['HTTP_X_FORWARDED_SSL'] ?? '') === 'on';
     }
 
     /**

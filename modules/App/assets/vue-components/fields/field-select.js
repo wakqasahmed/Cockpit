@@ -23,7 +23,13 @@ export default {
                 }
             }
 
-            return Array.isArray(value) ? value.join(', ') : value;
+            value = Array.isArray(value) ? value.join(', ') : value;
+
+            if (value && typeof(value) === 'string') {
+                value = value = App.utils.stripTags(value);
+            }
+
+            return value;
         }
     },
 
