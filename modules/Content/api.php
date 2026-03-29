@@ -752,12 +752,14 @@ $this->on('restApi.config', function($restApi) {
                 }
             }
 
-            $process = ['locale' => $app->param('locale', 'default')];
+            $process = [
+                'locale' => $app->param('locale', 'default'),
+                'user' => $app->helper('auth')->getUser(),
+            ];
             $populate = $app->param('populate:int', null);
 
             if ($populate) {
                 $process['populate'] = $populate;
-                $process['user'] = $app->helper('auth')->getUser();
             }
 
             $items = $app->module('content')->aggregate($model['name'], $pipeline, $process);

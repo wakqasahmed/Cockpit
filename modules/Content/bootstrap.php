@@ -342,6 +342,40 @@ $this->module('content')->extend([
 
         $collection = "content/collections/{$modelName}";
 
+        // check $lookup stagees + permissions
+        $allowedModels = null;
+
+        if (isset($process['user']['role'])) {
+            $allowedModels = $this->app->helper('content')->allowedModels($process['user']['role'] ?? null);
+        }
+
+        foreach ($pipeline as &$stage) {
+            
+            if (!isset($stage['$lookup'])) continue;
+
+            $model = $stage['$lookup']['from'] ?? null;
+
+            if (!$model) {
+                throw new Exception('Missing "from" in $lookup stage');
+            }
+
+            $fromModel = $this->model($model);
+
+            if (!$fromModel) {
+                throw new Exception('Try to access unknown model "' . $model . '" in $lookup stage');
+            }
+
+            if (!in_array($fromModel['type'], ['collection', 'tree'])) {
+                throw new Exception('Invalid model type for $lookup stage: ' . $model);
+            }
+
+            if ($allowedModels !== null && !in_array($model, $allowedModels)) {
+                throw new Exception('No permission to access model "' . $model . '" in $lookup stage');
+            }
+
+            $stage['$lookup']['from'] = "content/collections/{$model}";
+        }
+
         $items = $this->app->dataStorage->aggregate($collection, $pipeline)->toArray();
 
         if ($process['locale'] ?? false) {

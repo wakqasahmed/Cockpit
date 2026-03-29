@@ -11,6 +11,7 @@
 - Enhance SVG file handling during uploads
 - Improve Thumbhash class with enhanced validation and error handling
 - MongoLite: Optimize sorting performance
+- Content: Validate and enforce ACL permissions on `$lookup` stages in aggregate pipeline
 
 ## 2.13.5 (2026-03-09)
 
