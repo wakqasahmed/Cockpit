@@ -1,6 +1,6 @@
 # Release Notes
 
-## WIP
+## 2.14.0 (2026-03-30)
 
 - Improve KISS components
 - MongoLite: Restrict query callbacks (`$func`, `$fn`, `$f`, `$where`, direct criteria callbacks) to anonymous closures only
