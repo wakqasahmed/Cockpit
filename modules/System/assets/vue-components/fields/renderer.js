@@ -228,8 +228,9 @@ export let FieldRenderer = {
         onFieldItemKeydown(evt) {
 
             // ignore Enter that commits an IME (CJK/etc) composition
-            // keyCode 229 is a legacy fallback for engines where isComposing is unset on keydown
-            if (evt.isComposing || evt.keyCode === 229) {
+            // keyCode 229 covers IME commits where compositionend precedes keydown.
+            // eslint-disable-next-line no-restricted-properties -- The deprecated fallback is required for this IME timing case.
+            if (evt.isComposing || evt.keyCode === 229) { // skipcq
                 return;
             }
 
